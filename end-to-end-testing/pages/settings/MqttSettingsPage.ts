@@ -1,16 +1,16 @@
 import { Locator, Page, expect } from "@playwright/test";
 
 export class MqttSettingsPage {
-  readonly page: Page;
-  readonly addEntryButton: Locator;
+  private readonly page: Page;
+  private readonly addEntryButton: Locator;
 
-  readonly hostField: Locator;
-  readonly portField: Locator;
-  readonly usernameField: Locator;
-  readonly passwordField: Locator;
-  readonly submitButton: Locator;
-  readonly finishButton: Locator;
-  readonly closeButton: Locator;
+  private readonly hostField: Locator;
+  private readonly portField: Locator;
+  private readonly usernameField: Locator;
+  private readonly passwordField: Locator;
+  private readonly submitButton: Locator;
+  private readonly finishButton: Locator;
+  private readonly closeButton: Locator;
 
   constructor(page: Page) {
     this.page = page;

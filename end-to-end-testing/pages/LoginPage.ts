@@ -1,11 +1,11 @@
 import { type Locator, type Page } from "@playwright/test";
 
 export class LoginPage {
-  readonly page: Page;
-  readonly usernameField: Locator;
-  readonly passwordField: Locator;
-  readonly rememberMeCheckbox: Locator;
-  readonly loginButton: Locator;
+  private readonly page: Page;
+  private readonly usernameField: Locator;
+  private readonly passwordField: Locator;
+  private readonly rememberMeCheckbox: Locator;
+  private readonly loginButton: Locator;
 
   constructor(page: Page) {
     this.page = page;

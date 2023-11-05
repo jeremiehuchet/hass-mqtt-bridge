@@ -1,8 +1,8 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 export class DevicesPage {
-  readonly page: Page;
-  readonly devicesList: Locator;
+  private readonly page: Page;
+  private readonly devicesList: Locator;
 
   constructor(page: Page) {
     this.page = page;
