@@ -1,0 +1,45 @@
+name: Build and test
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v23
+      - uses: cachix/cachix-action@v12
+        with:
+          name: devenv
+      - name: Install devenv.sh
+        run: nix profile install tarball+https://install.devenv.sh/latest
+
+      - name: Build the devenv shell and run any pre-commit hooks
+        run: devenv ci
+
+      - name: Cargo test
+        run: devenv shell cargo test
+
+      - name: Install playwright
+        shell: devenv shell bash -e {0}
+        run: |
+          cd end-to-end-testing
+          pnpm install
+          pnpm exec playwright install --with-deps
+
+      - name: Run Playwright tests
+
+        shell: devenv shell bash -e {0}
+        run: |
+          cd end-to-end-testing
+          pnpm exec playwright test
+
+      - uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: playwright-report
+          path: end-to-end-testing/playwright-report/
+          retention-days: 30

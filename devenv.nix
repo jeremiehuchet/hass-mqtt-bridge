@@ -2,6 +2,7 @@
 
 {
   packages = [
+    pkgs.docker-compose
     pkgs.vscode
   ];
 
@@ -14,4 +15,5 @@
   languages.typescript.enable = true;
 
   pre-commit.hooks.rustfmt.enable = true;
+  pre-commit.hooks.prettier.enable = true;
 }

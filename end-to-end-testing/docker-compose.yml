@@ -1,0 +1,25 @@
+version: "3"
+
+services:
+  homeassistant:
+    image: homeassistant/home-assistant
+    container_name: homeassistant
+    volumes:
+      - ./docker-compose/hass/configuration.yaml:/config/configuration.yaml
+      - ./docker-compose/hass/storage/auth:/config/.storage/auth:ro
+      - ./docker-compose/hass/storage/auth_provider.homeassistant:/config/.storage/auth_provider.homeassistant:ro
+      - ./docker-compose/hass/storage/onboarding:/config/.storage/onboarding:ro
+      - ./docker-compose/hass/storage/person:/config/.storage/person:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - 8123:8123
+    depends_on:
+      - mosquitto
+
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto
+    volumes:
+      - "./docker-compose/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"
+      - "./docker-compose/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro"
+      - "./docker-compose/mosquitto/passwd:/mosquitto/config/passwd:ro"
