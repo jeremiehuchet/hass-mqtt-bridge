@@ -9,6 +9,9 @@
     enable = true;
     channel = "stable";
   };
+  languages.javascript.enable = true;
+  languages.javascript.corepack.enable = true;
+  languages.typescript.enable = true;
 
   pre-commit.hooks.rustfmt.enable = true;
 }
