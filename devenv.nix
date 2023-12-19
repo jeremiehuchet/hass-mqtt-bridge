@@ -3,6 +3,7 @@
 {
   packages = [
     pkgs.docker-compose
+    pkgs.openssl
     pkgs.vscode
   ];
 

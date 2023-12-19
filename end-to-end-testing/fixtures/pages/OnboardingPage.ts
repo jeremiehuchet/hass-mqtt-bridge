@@ -38,6 +38,26 @@ export class OnboardingPage {
     this.finishOnboardingButton = page.getByRole("button", { name: "Finish" });
   }
 
+  async goto() {
+    await this.page.context().clearCookies();
+    await this.page.goto("/onboarding.html");
+  }
+
+  async onboard(
+    name: string,
+    username: string,
+    password: string,
+    country: string,
+  ) {
+    await this.startButton.isVisible();
+    await this.start();
+    await this.createAccount(name, username, password);
+    await this.skipLocation();
+    await this.selectCountry(country);
+    await this.skipStatistics();
+    await this.finish();
+  }
+
   async onboardIfNeeded(
     name: string,
     username: string,
@@ -55,11 +75,6 @@ export class OnboardingPage {
       await this.skipStatistics();
       await this.finish();
     }
-  }
-
-  async goto() {
-    await this.page.context().clearCookies();
-    await this.page.goto("/onboarding.html");
   }
 
   async start() {

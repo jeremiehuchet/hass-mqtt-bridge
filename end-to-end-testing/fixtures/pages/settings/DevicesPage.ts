@@ -19,4 +19,12 @@ export class DevicesPage {
     });
     await expect(matchingDevicesLocator).toHaveCount(1);
   }
+
+  async gotoDevice(deviceName: string) {
+    this.devicesList
+      .filter({
+        hasText: deviceName,
+      })
+      .click();
+  }
 }

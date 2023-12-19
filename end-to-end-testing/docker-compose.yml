@@ -19,3 +19,21 @@ services:
       - "./docker-compose/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"
       - "./docker-compose/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro"
       - "./docker-compose/mosquitto/passwd:/mosquitto/config/passwd:ro"
+    ports:
+      - 1883
+
+  hass-mqtt-bridge:
+    build:
+      context: ../
+      dockerfile: end-to-end-testing/docker-compose/hass-mqtt-bridge/Dockerfile
+    environment:
+      MQTT_BROKER_URL: tcp://mosquitto:1883
+      MQTT_USERNAME: hass
+      MQTT_PASSWORD: hass
+      RIKA_BASEURL: http://rika-firenet-mock:3000
+      RIKA_USERNAME: registered-user@rika-firenet.com
+      RIKA_PASSWORD: secret
+
+  rika-firenet-mock:
+    build:
+      context: https://github.com/jeremiehuchet/rika-firenet-api-rs.git#:mock
