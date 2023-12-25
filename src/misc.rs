@@ -25,27 +25,40 @@ pub fn some_string(str: &str) -> Option<String> {
 
 use regex::Regex;
 
-pub fn get_hostname() -> String {
+pub fn hostname() -> String {
     hostname::get()
         .ok()
         .map(|name| format!("{}", name.to_str().unwrap_or("")))
         .unwrap_or("localhost".to_string())
 }
 
-pub trait Slug {
+pub trait StringUtils {
     fn slug(&self) -> String;
+    fn strip_repeated_suffix(&self, suffix: &str) -> String;
 }
-impl Slug for String {
+impl StringUtils for String {
     fn slug(&self) -> String {
         self.as_str().slug()
     }
+
+    fn strip_repeated_suffix(&self, suffix: &str) -> String {
+        let mut stripped = self.as_str();
+        while let Some(stripped_again) = stripped.strip_suffix(suffix) {
+            stripped = stripped_again;
+        }
+        return stripped.to_string();
+    }
 }
-impl Slug for &str {
+impl StringUtils for &str {
     fn slug(&self) -> String {
         let renamed_symbols = self.replace("%", "percent");
         Regex::new(r"[^a-zA-Z0-9_-]")
             .unwrap()
             .replace_all(renamed_symbols.as_str(), "_")
             .to_string()
+    }
+
+    fn strip_repeated_suffix(&self, suffix: &str) -> String {
+        return self.to_string().strip_repeated_suffix(suffix);
     }
 }

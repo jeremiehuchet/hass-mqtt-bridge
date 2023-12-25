@@ -3,7 +3,6 @@ version: "3"
 services:
   homeassistant:
     image: homeassistant/home-assistant
-    container_name: homeassistant
     volumes:
       - ./docker-compose/hass/configuration.yaml:/config/configuration.yaml
       - /etc/localtime:/etc/localtime:ro
@@ -14,26 +13,43 @@ services:
 
   mosquitto:
     image: eclipse-mosquitto
-    container_name: mosquitto
     volumes:
       - "./docker-compose/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"
       - "./docker-compose/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro"
       - "./docker-compose/mosquitto/passwd:/mosquitto/config/passwd:ro"
     ports:
-      - 1883
+      - 1883:1883
+
+  mosquitto-debug:
+    image: eclipse-mosquitto
+    entrypoint: mosquitto_sub
+    command:
+      - --id
+      - debug-all
+      - --url
+      - mqtt://hass:hass@mosquitto:1883/#
+      - --verbose
+    depends_on:
+      - mosquitto
+
+  rika-firenet-mock:
+    build:
+      context: https://github.com/jeremiehuchet/rika-firenet-api-rs.git#:mock
+    ports:
+      - 3000:3000
 
   hass-mqtt-bridge:
     build:
       context: ../
       dockerfile: end-to-end-testing/docker-compose/hass-mqtt-bridge/Dockerfile
     environment:
-      MQTT_BROKER_URL: tcp://mosquitto:1883
+      RUST_LOG: debug
+      MQTT_BROKER_URL: mqtt://mosquitto:1883
       MQTT_USERNAME: hass
       MQTT_PASSWORD: hass
       RIKA_BASEURL: http://rika-firenet-mock:3000
       RIKA_USERNAME: registered-user@rika-firenet.com
       RIKA_PASSWORD: secret
-
-  rika-firenet-mock:
-    build:
-      context: https://github.com/jeremiehuchet/rika-firenet-api-rs.git#:mock
+    depends_on:
+      - mosquitto
+      - rika-firenet-mock

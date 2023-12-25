@@ -4,11 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+actix = "0.13"
+actix-web = "4.4"
+anyhow = "1.0"
+async-stream = "0.3"
 chrono = "0.4"
 clap = { version = "4.0", features = ["derive", "cargo", "env"] }
 env_logger = "0.10"
 hass-mqtt-autodiscovery = { git = "https://github.com/jeremiehuchet/hass-mqtt-autodiscovery-rs.git" }
 hostname = "0.3"
+lazy_static = "1.0"
 log = "0.4"
 package_info = "0.1"
 package_info_derive = "0.1"
@@ -17,8 +22,6 @@ rika-firenet-client = { git = "https://github.com/jeremiehuchet/rika-firenet-api
 rumqttc = "0.23"
 serde = "1.0"
 serde_json = "1.0"
-tokio = { version = "1.33", features = ["rt", "macros"] }
-tokio-cron-scheduler = "0.9"
 url = "2.5"
 
 
