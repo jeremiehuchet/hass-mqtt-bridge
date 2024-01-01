@@ -1,11 +1,12 @@
+use crate::{
+    misc::{app_infos, Sluggable},
+    mqtt::{EntityConfiguration, MqttActor, PublishEntityData},
+};
 use actix::prelude::*;
 use async_stream::stream;
 use chrono::Duration;
 use hass_mqtt_autodiscovery::mqtt::{
-    common::{
-        Availability, AvailabilityCheck, Device, EntityCategory, MqttCommon, ReadOnlyEntity,
-        SensorStateClass,
-    },
+    common::{Availability, AvailabilityCheck, Device, EntityCategory, SensorStateClass},
     sensor::{Sensor, SensorDeviceClass},
     units::{MassUnit, SignalStrengthUnit, TempUnit, TimeUnit, Unit},
 };
@@ -13,45 +14,32 @@ use lazy_static::lazy_static;
 use log::{debug, error, info};
 use rika_firenet_client::model::StatusDetail;
 use rika_firenet_client::HasDetailledStatus;
-use rika_firenet_client::{RikaFirenetClient, RikaFirenetClientBuilder, StoveStatus};
+use rika_firenet_client::{RikaFirenetClient, StoveStatus};
 use std::{collections::HashMap, fmt::Display, ops::Deref};
-use url::Url;
-
-use crate::{
-    misc::{app_infos, some_string, StringUtils},
-    mqtt::{MqttActor, PublishEntityData, RegisterEntity},
-};
 
 lazy_static! {
     static ref RIKA_DISCOVERY_INTERVAL: Duration = Duration::days(7);
     static ref RIKA_STATUS_INTERVAL: Duration = Duration::seconds(10);
+    static ref RIKA_SENSOR_EXPIRATION_TIME: Duration = Duration::minutes(2);
 }
 
 pub struct RikaActor {
     mqtt_addr: Addr<MqttActor>,
-    client: RikaFirenetClient,
+    rika_client: RikaFirenetClient,
     stoves: HashMap<String, RikaEntities>,
 }
 
 impl RikaActor {
-    pub fn new(
-        mqtt_addr: Addr<MqttActor>,
-        base_url: Url,
-        username: String,
-        password: String,
-    ) -> Self {
+    pub fn new(mqtt_addr: Addr<MqttActor>, rika_client: RikaFirenetClient) -> Self {
         RikaActor {
             mqtt_addr,
-            client: RikaFirenetClientBuilder::default()
-                .base_url(base_url.to_string().strip_repeated_suffix("/"))
-                .credentials(username, password)
-                .build(),
+            rika_client,
             stoves: HashMap::new(),
         }
     }
 
     fn execute_stove_discovery(act: &mut RikaActor, ctx: &mut Context<Self>) {
-        let client = act.client.clone();
+        let client = act.rika_client.clone();
         ctx.add_stream(stream! {
             match client.list_stoves().await {
                 Ok(stove_ids) => {
@@ -71,7 +59,7 @@ impl RikaActor {
 
     fn execute_stove_scraper(act: &mut RikaActor, ctx: &mut Context<Self>) {
         let known_stove_ids: Vec<String> = act.stoves.keys().map(String::clone).collect();
-        let client = act.client.clone();
+        let client = act.rika_client.clone();
         ctx.add_stream(stream! {
             for stove_id in known_stove_ids {
                 match client.status(stove_id.clone()).await {
@@ -111,7 +99,7 @@ impl StreamHandler<StoveStatus> for RikaActor {
         if Some(&new_entities) != old_entities.as_ref() {
             debug!("Publishing configuration for {new_entities}");
             for entity in new_entities.collect() {
-                self.mqtt_addr.do_send(RegisterEntity::Sensor(entity));
+                self.mqtt_addr.do_send(EntityConfiguration::Sensor(entity));
             }
         }
 
@@ -199,262 +187,142 @@ impl From<&StoveStatus> for RikaEntities {
         let model = &stove_status.stove_type;
         let name = &stove_status.name;
         let id = &stove_status.stove_id;
-        let unique_id = &format!("{manufacturer}_{model}-{name}-{id}").slug();
+        let unique_id = &format!("{manufacturer}_{model}_{name}-{id}").slug();
+        let object_id = &format!("{manufacturer}_{model}_{name}").slug();
 
         let state_topic = format!("rika-firenet/{unique_id}/state");
 
-        let device = Device {
-            name: Some(format!("Stove {name}")),
-            identifiers: vec![unique_id.clone()],
-            connections: Vec::new(),
-            configuration_url: Some(format!("https://www.rika-firenet.com/web/stove/{id}",)),
-            manufacturer: Some(manufacturer.clone()),
-            model: Some(model.clone()),
-            suggested_area: None,
-            sw_version: Some(
-                stove_status
-                    .sensors
-                    .parameter_version_main_board
-                    .to_string(),
-            ),
-            hw_version: None,
-            via_device: None,
-        };
+        let version = stove_status
+            .sensors
+            .parameter_version_main_board
+            .to_string();
+        let (version_major, version_minor) = version.split_at(1);
 
-        let availability = Availability::single(AvailabilityCheck {
-            payload_available: Some("0".to_string()),
-            payload_not_available: None,
-            topic: "~/state".to_string(),
-            value_template: some_string("{{ value_json.lastSeenMinutes }}"),
-        });
+        let device = Device::default()
+            .name(format!("Stove {name}"))
+            .add_identifier(unique_id)
+            .configuration_url(format!("https://www.rika-firenet.com/web/stove/{id}"))
+            .manufacturer(manufacturer)
+            .model(model)
+            .sw_version(format!("{version_major}.{version_minor}"));
 
-        let common = MqttCommon {
-            topic_prefix: Some(format!("rika-firenet/{unique_id}")),
-            origin: app_infos::origin(),
-            device,
-            entity_category: None,
-            icon: None,
-            json_attributes_topic: None,
-            json_attributes_template: None,
-            object_id: None,
-            unique_id: None,
-            availability,
-            enabled_by_default: Some(true),
-        };
+        let availability = Availability::single(
+            AvailabilityCheck::topic("~/state")
+                .payload_available("0")
+                .value_template("{{ value_json.lastSeenMinutes }}"),
+        )
+        .expire_after(RIKA_SENSOR_EXPIRATION_TIME.num_seconds().unsigned_abs());
+
+        let sensor_defaults = Sensor::default()
+            .topic_prefix(format!("rika-firenet/{unique_id}"))
+            .state_topic("~/state")
+            .origin(app_infos::origin())
+            .device(device)
+            .availability(availability);
 
         RikaEntities {
             display_name: format!("{name} (id={id})"),
             state_topic: state_topic.clone(),
-            status_sensor: Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-status")),
-                    unique_id: Some(format!("{unique_id}-status")),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: some_string("{{ value_json.status }}"),
-                },
-                device_class: Some(SensorDeviceClass::Enum),
-                expire_after: Some(60),
-                force_update: Some(false),
-                last_reset_value_template: None,
-                name: some_string("Status"),
-                suggested_display_precision: None,
-                state_class: None,
-                unit_of_measurement: None,
-            },
-            room_temperature_sensor: Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-temp")),
-                    unique_id: Some(format!("{unique_id}-temp")),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: some_string("{{ value_json.sensors.inputRoomTemperature }}"),
-                },
-                device_class: Some(SensorDeviceClass::Temperature),
-                expire_after: Some(60),
-                force_update: None,
-                last_reset_value_template: None,
-                name: some_string("Room temperature"),
-                suggested_display_precision: None,
-                state_class: Some(SensorStateClass::Measurement),
-                unit_of_measurement: Some(Unit::Temperature(TempUnit::Celsius)),
-            },
-            flame_temperature_sensor: Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-flame-temp")),
-                    unique_id: Some(format!("{unique_id}-flame-temp")),
-                    entity_category: Some(EntityCategory::Diagnostic),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: some_string("{{ value_json.sensors.inputFlameTemperature }}"),
-                },
-                device_class: Some(SensorDeviceClass::Temperature),
-                expire_after: Some(60),
-                force_update: None,
-                last_reset_value_template: None,
-                name: some_string("Flame temperature"),
-                suggested_display_precision: None,
-                state_class: Some(SensorStateClass::Measurement),
-                unit_of_measurement: Some(Unit::Temperature(TempUnit::Celsius)),
-            },
-            bake_temperature_sensor: Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-bake-temp")),
-                    unique_id: Some(format!("{unique_id}-bake-temp")),
-                    entity_category: Some(EntityCategory::Diagnostic),
-                    enabled_by_default: Some(false),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: some_string("{{ value_json.sensors.inputBakeTemperature }}"),
-                },
-                device_class: Some(SensorDeviceClass::Temperature),
-                expire_after: Some(60),
-                force_update: None,
-                last_reset_value_template: None,
-                name: some_string("Bake temperature"),
-                suggested_display_precision: None,
-                state_class: Some(SensorStateClass::Measurement),
-                unit_of_measurement: Some(Unit::Temperature(TempUnit::Celsius)),
-            },
-            wifi_strength_sensor: Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-wifi-strength")),
-                    unique_id: Some(format!("{unique_id}-wifi-strength")),
-                    entity_category: Some(EntityCategory::Diagnostic),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: some_string("{{ value_json.sensors.statusWifiStrength }}"),
-                },
-                device_class: Some(SensorDeviceClass::SignalStrength),
-                expire_after: Some(60),
-                force_update: None,
-                last_reset_value_template: None,
-                name: some_string("Wifi strength"),
-                suggested_display_precision: None,
-                state_class: Some(SensorStateClass::Measurement),
-                unit_of_measurement: Some(Unit::SignalStrength(
-                    SignalStrengthUnit::DecibelsMilliwatt,
-                )),
-            },
-            pellet_consumption_sensor: Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-feed-rate-total")),
-                    unique_id: Some(format!("{unique_id}-feed-rate-total")),
-                    entity_category: Some(EntityCategory::Diagnostic),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: some_string("{{ value_json.sensors.parameterFeedRateTotal }}"),
-                },
-                device_class: Some(SensorDeviceClass::Weight),
-                expire_after: Some(60),
-                force_update: None,
-                last_reset_value_template: None,
-                name: some_string("Total Consumption"),
-                suggested_display_precision: None,
-                state_class: Some(SensorStateClass::Measurement),
-                unit_of_measurement: Some(Unit::Mass(MassUnit::Kilograms)),
-            },
-            runtime_sensor: Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-runtime")),
-                    unique_id: Some(format!("{unique_id}-runtime")),
-                    entity_category: Some(EntityCategory::Diagnostic),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: some_string("{{ value_json.sensors.parameterRuntimePellets }}"),
-                },
-                device_class: Some(SensorDeviceClass::Duration),
-                expire_after: Some(60),
-                force_update: None,
-                last_reset_value_template: None,
-                name: some_string("Total runtime"),
-                suggested_display_precision: None,
-                state_class: Some(SensorStateClass::Measurement),
-                unit_of_measurement: Some(Unit::Time(TimeUnit::Hours)),
-            },
-            ignition_sensor: Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-ignition-count")),
-                    unique_id: Some(format!("{unique_id}-ignition-count")),
-                    entity_category: Some(EntityCategory::Diagnostic),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: some_string("{{ value_json.sensors.parameterIgnitionCount }}"),
-                },
-                device_class: None,
-                expire_after: Some(60),
-                force_update: None,
-                last_reset_value_template: None,
-                name: some_string("Ignition count"),
-                suggested_display_precision: None,
-                state_class: Some(SensorStateClass::Measurement),
-                unit_of_measurement: None,
-            },
-            onoff_cycles_sensor: Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-onoff-count")),
-                    unique_id: Some(format!("{unique_id}-onoff-count")),
-                    entity_category: Some(EntityCategory::Diagnostic),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: some_string(
-                        "{{ value_json.sensors.parameterOnOffCycleCount }}",
-                    ),
-                },
-                device_class: None,
-                expire_after: Some(60),
-                force_update: None,
-                last_reset_value_template: None,
-                name: some_string("On/Off cycle count"),
-                suggested_display_precision: None,
-                state_class: Some(SensorStateClass::Measurement),
-                unit_of_measurement: None,
-            },
-            parameter_error_count: vec![
-                0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-            ]
-            .into_iter()
-            .map(|number| Sensor {
-                common: MqttCommon {
-                    object_id: Some(format!("{unique_id}-p-err-count-{number}")),
-                    unique_id: Some(format!("{unique_id}-p-err-count-{number}")),
-                    entity_category: Some(EntityCategory::Diagnostic),
-                    ..common.clone()
-                },
-                ro_entity: ReadOnlyEntity {
-                    state_topic: state_topic.clone(),
-                    value_template: Some(format!(
-                        "{{{{ value_json.sensors.parameterErrorCount{number} }}}}"
-                    )),
-                },
-                device_class: None,
-                expire_after: Some(60),
-                force_update: Some(false),
-                last_reset_value_template: None,
-                name: Some(format!("Parameter error count {number}")),
-                suggested_display_precision: None,
-                state_class: Some(SensorStateClass::Measurement),
-                unit_of_measurement: None,
-            })
-            .collect(),
+            status_sensor: sensor_defaults
+                .clone()
+                .name("Status")
+                .unique_id(format!("{unique_id}-st"))
+                .object_id(format!("{object_id}_status"))
+                .value_template("{{ value_json.status }}")
+                .device_class(SensorDeviceClass::Enum),
+            room_temperature_sensor: sensor_defaults
+                .clone()
+                .name("Room temperature")
+                .unique_id(format!("{unique_id}-temp"))
+                .object_id(format!("{object_id}_temperature"))
+                .value_template("{{ value_json.sensors.inputRoomTemperature }}")
+                .device_class(SensorDeviceClass::Temperature)
+                .state_class(SensorStateClass::Measurement)
+                .unit_of_measurement(Unit::Temperature(TempUnit::Celsius))
+                .force_update(true),
+            flame_temperature_sensor: sensor_defaults
+                .clone()
+                .name("Flame temperature")
+                .unique_id(format!("{unique_id}-flame-temp"))
+                .object_id(format!("{object_id}_flame_temperature"))
+                .value_template("{{ value_json.sensors.inputFlameTemperature }}")
+                .entity_category(EntityCategory::Diagnostic)
+                .device_class(SensorDeviceClass::Temperature)
+                .state_class(SensorStateClass::Measurement)
+                .unit_of_measurement(Unit::Temperature(TempUnit::Celsius))
+                .force_update(true),
+            bake_temperature_sensor: sensor_defaults
+                .clone()
+                .name("Bake temperature")
+                .unique_id(format!("{unique_id}-bake-temp"))
+                .object_id(format!("{object_id}_bake_temperature"))
+                .value_template("{{ value_json.sensors.inputBakeTemperature }}")
+                .entity_category(EntityCategory::Diagnostic)
+                .device_class(SensorDeviceClass::Temperature)
+                .state_class(SensorStateClass::Measurement)
+                .unit_of_measurement(Unit::Temperature(TempUnit::Celsius))
+                .force_update(true)
+                .enabled_by_default(false),
+            wifi_strength_sensor: sensor_defaults
+                .clone()
+                .name("Wifi strength")
+                .unique_id(format!("{unique_id}-wifi-strength"))
+                .object_id(format!("{object_id}_wifi_strength"))
+                .value_template("{{ value_json.sensors.statusWifiStrength }}")
+                .entity_category(EntityCategory::Diagnostic)
+                .device_class(SensorDeviceClass::SignalStrength)
+                .state_class(SensorStateClass::Measurement)
+                .unit_of_measurement(Unit::SignalStrength(SignalStrengthUnit::DecibelsMilliwatt))
+                .force_update(true),
+            pellet_consumption_sensor: sensor_defaults
+                .clone()
+                .name("Total consumption")
+                .unique_id(format!("{unique_id}-feed-rate-total"))
+                .object_id(format!("{object_id}_feed_rate_total"))
+                .value_template("{{ value_json.sensors.parameterFeedRateTotal }}")
+                .device_class(SensorDeviceClass::Weight)
+                .state_class(SensorStateClass::TotalIncreasing)
+                .unit_of_measurement(Unit::Mass(MassUnit::Kilograms))
+                .force_update(true),
+            runtime_sensor: sensor_defaults
+                .clone()
+                .name("Total runtime")
+                .unique_id(format!("{unique_id}-rt"))
+                .object_id(format!("{object_id}_runtime"))
+                .value_template("{{ value_json.sensors.parameterRuntimePellets }}")
+                .device_class(SensorDeviceClass::Duration)
+                .state_class(SensorStateClass::TotalIncreasing)
+                .unit_of_measurement(Unit::Time(TimeUnit::Hours)),
+            ignition_sensor: sensor_defaults
+                .clone()
+                .name("Ignition count")
+                .unique_id(format!("{unique_id}-ignition-count"))
+                .object_id(format!("{object_id}_ignition_count"))
+                .value_template("{{ value_json.sensors.parameterIgnitionCount }}")
+                .entity_category(EntityCategory::Diagnostic)
+                .state_class(SensorStateClass::TotalIncreasing),
+            onoff_cycles_sensor: sensor_defaults
+                .clone()
+                .name("On/Off cycle count")
+                .unique_id(format!("{unique_id}-onoff-count"))
+                .object_id(format!("{object_id}_onoff_count"))
+                .value_template("{{ value_json.sensors.parameterOnOffCycleCount }}")
+                .entity_category(EntityCategory::Diagnostic)
+                .state_class(SensorStateClass::TotalIncreasing),
+            parameter_error_count: (0..=19)
+                .map(|number| {
+                    sensor_defaults
+                        .clone()
+                        .name(format!("Parameter error count {number}"))
+                        .unique_id(format!("{unique_id}-p-err-count-{number}"))
+                        .object_id(format!("{object_id}_error_count_{number}"))
+                        .value_template(format!(
+                            "{{{{ value_json.sensors.parameterErrorCount{number} }}}}"
+                        ))
+                        .entity_category(EntityCategory::Diagnostic)
+                        .state_class(SensorStateClass::TotalIncreasing)
+                })
+                .collect(),
         }
     }
 }

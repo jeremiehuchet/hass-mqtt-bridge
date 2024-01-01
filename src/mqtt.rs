@@ -4,7 +4,7 @@ use hass_mqtt_autodiscovery::{
     mqtt::{binary_sensor::BinarySensor, number::Number, sensor::Sensor},
     HomeAssistantMqtt,
 };
-use log::{debug, error, info};
+use log::{debug, error, info, trace};
 use rumqttc::v5::{
     mqttbytes::{
         v5::{ConnAck, Packet},
@@ -63,7 +63,7 @@ impl MqttActor {
     }
 
     fn handle_event(&self, event: Event) {
-        debug!("event: {event:?}");
+        trace!("event: {event:?}");
     }
 }
 
@@ -100,24 +100,24 @@ impl StreamHandler<Result<Event, ConnectionError>> for MqttActor {
 
 #[derive(Message, Clone)]
 #[rtype(result = "()")]
-pub enum RegisterEntity {
+pub enum EntityConfiguration {
     BinarySensor(BinarySensor),
     Number(Number),
     Sensor(Sensor),
 }
 
-impl Handler<RegisterEntity> for MqttActor {
+impl Handler<EntityConfiguration> for MqttActor {
     type Result = ();
 
-    fn handle(&mut self, msg: RegisterEntity, ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: EntityConfiguration, ctx: &mut Self::Context) -> Self::Result {
         if let Some(ha_mqtt) = self.ha_mqtt.clone() {
             async move {
                 let result = match msg {
-                    RegisterEntity::BinarySensor(binary_sensor) => {
+                    EntityConfiguration::BinarySensor(binary_sensor) => {
                         ha_mqtt.publish_binary_sensor(binary_sensor).await
                     }
-                    RegisterEntity::Sensor(sensor) => ha_mqtt.publish_sensor(sensor).await,
-                    RegisterEntity::Number(number) => ha_mqtt.publish_number(number).await,
+                    EntityConfiguration::Sensor(sensor) => ha_mqtt.publish_sensor(sensor).await,
+                    EntityConfiguration::Number(number) => ha_mqtt.publish_number(number).await,
                 };
                 if let Err(error) = result {
                     error!("Unable to publish entity: {error}")

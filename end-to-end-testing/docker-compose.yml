@@ -38,6 +38,12 @@ services:
     ports:
       - 3000:3000
 
+  somfy-protect-mock:
+    build:
+      context: https://github.com/jeremiehuchet/somfy-protect-api-rs.git#:mock
+    ports:
+      - 3001:3000
+
   hass-mqtt-bridge:
     build:
       context: ../
@@ -50,6 +56,12 @@ services:
       RIKA_BASEURL: http://rika-firenet-mock:3000
       RIKA_USERNAME: registered-user@rika-firenet.com
       RIKA_PASSWORD: secret
+      SOMFY_API_BASEURL: http://somfy-protect-mock:3000/api
+      SOMFY_AUTH_BASEURL: http://somfy-protect-mock:3000/auth
+      SOMFY_CLIENT_ID: somfy
+      SOMFY_CLIENT_SECRET: somfy secret
+      SOMFY_USERNAME: user@somfy.com
+      SOMFY_PASSWORD: user password
     depends_on:
       - mosquitto
       - rika-firenet-mock

@@ -4,9 +4,6 @@ RUN cargo new --bin hass-mqtt-bridge
 
 WORKDIR /hass-mqtt-bridge
 COPY Cargo.toml Cargo.lock ./
-RUN cargo build --release
-RUN rm -rf src target/release/incremental target/release/hass-mqtt-bridge
-
 COPY src ./src
 RUN cargo install --path . --root /usr/local
 
