@@ -43,6 +43,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: end-to-end-testing/node_modules
+          key: ${{ runner.os }}-nodemodules-${{ hashFiles('end-to-end-testing/pnpm-lock.yaml') }}
+
       - name: Install Playwright and dependencies
         working-directory: end-to-end-testing
         run: |
