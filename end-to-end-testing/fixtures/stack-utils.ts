@@ -34,20 +34,18 @@ const environment = new DockerComposeEnvironment(".", "docker-compose.yml")
     Wait.forLogMessage(
       "Somfy Protect API mock listening on port 3000",
     ).withStartupTimeout(5000),
+  )
+  .withWaitStrategy(
+    "hass-mqtt-bridge-1",
+    Wait.forLogMessage(
+      "Actix runtime found; starting in Actix runtime",
+    ).withStartupTimeout(5000),
   );
 
 export async function startAndInitializeStack() {
   console.log("starting stack");
   const stack = await environment.up();
   console.log("stack started");
-
-  [
-    "homeassistant-1",
-    "hass-mqtt-bridge-1",
-    "rika-firenet-mock-1",
-    "somfy-protect-mock-1",
-    "mosquitto-debug-1",
-  ].forEach((containerName) => captureLogOutput(stack, containerName));
 
   const homeAssistantStatus: EnvironmentStatus = {
     stack,
@@ -71,14 +69,4 @@ export async function startAndInitializeStack() {
     }
   });
   return homeAssistantStatus;
-}
-
-async function captureLogOutput(
-  stack: StartedDockerComposeEnvironment,
-  containerName: string,
-) {
-  const logs = await stack.getContainer(containerName).logs();
-  logs.on("data", (line: string) =>
-    console.log(`${containerName} | ` + line.replace(/\n$/, "")),
-  );
 }

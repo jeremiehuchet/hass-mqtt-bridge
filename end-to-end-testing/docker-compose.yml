@@ -1,5 +1,3 @@
-version: "3"
-
 services:
   homeassistant:
     image: homeassistant/home-assistant:2024.4
@@ -27,6 +25,8 @@ services:
       - --url
       - mqtt://hass:hass@mosquitto:1883/#
       - --verbose
+    depends_on:
+      - mosquitto
 
   rika-firenet-mock:
     build:
@@ -35,6 +35,7 @@ services:
       - 3000:3000
 
   somfy-protect-mock:
+    container_name: somfy-protect-mock
     build:
       context: https://github.com/jeremiehuchet/somfy-protect-api-rs.git#:mock
     ports:
@@ -45,7 +46,7 @@ services:
       context: ../
       dockerfile: end-to-end-testing/docker-compose/hass-mqtt-bridge/Dockerfile
     environment:
-      RUST_LOG: debug
+      RUST_LOG: info,hass_mqtt_bridge:debug
       MQTT_BROKER_URL: mqtt://mosquitto:1883
       MQTT_USERNAME: hass
       MQTT_PASSWORD: hass
