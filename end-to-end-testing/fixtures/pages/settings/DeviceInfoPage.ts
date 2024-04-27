@@ -17,25 +17,31 @@ export class DeviceInfoPage {
     this.manufacturer = info.locator(".manuf");
     this.model = info.locator(".model");
     this.extra = info.locator(".extra-info");
-    this.entities = page.locator("ha-device-entities-card");
-    this.diagnostics = page.locator("ha-device-diagnostics-card");
+    this.entities = page.locator(
+      "ha-device-entities-card:has-text('Sensors') hui-sensor-entity-row",
+    );
+    this.diagnostics = page.locator(
+      "ha-device-entities-card:has-text('Diagnostic') hui-sensor-entity-row",
+    );
   }
 
   async hasInfo(manufacturer: string, model: string, extra: string) {
-    await expect(this.manufacturer).toBe(manufacturer);
-    await expect(this.model).toBe(model);
-    await expect(this.extra).toBe(extra);
+    await expect(this.manufacturer).toHaveText(`by ${manufacturer}`);
+    await expect(this.model).toHaveText(model);
+    await expect(this.extra).toHaveText(extra);
   }
 
-  async hasEntities(entities: string[]) {
-    for (const entity in entities) {
-      await expect(this.entities).toContainText(entity);
-    }
+  async hasEntities(entities: { [key: string]: string }) {
+    const expectedEntities = Object.entries(entities).map(
+      ([name, value]) => `${value} ${name}`,
+    );
+    await expect(this.entities).toHaveText(expectedEntities);
   }
 
-  async hasDiagnostics(diagnostics: string[]) {
-    for (const diagnostic in diagnostics) {
-      await expect(this.diagnostics).toContainText(diagnostic);
-    }
+  async hasDiagnostics(diagnostics: { [key: string]: string }) {
+    const expectedDiagnostics = Object.entries(diagnostics).map(
+      ([name, value]) => `${value} ${name}`,
+    );
+    await expect(this.diagnostics).toHaveText(expectedDiagnostics);
   }
 }

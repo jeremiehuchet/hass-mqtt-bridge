@@ -1,4 +1,4 @@
-import { type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export class OnboardingPage {
   private readonly page: Page;
@@ -40,7 +40,7 @@ export class OnboardingPage {
 
   async goto() {
     await this.page.context().clearCookies();
-    await this.page.goto("/onboarding.html");
+    await this.page.goto("/onboarding.html", { waitUntil: "networkidle" });
   }
 
   async onboard(
@@ -49,7 +49,6 @@ export class OnboardingPage {
     password: string,
     country: string,
   ) {
-    await this.startButton.isVisible();
     await this.start();
     await this.createAccount(name, username, password);
     await this.skipLocation();
@@ -74,6 +73,7 @@ export class OnboardingPage {
       await this.selectCountry(country);
       await this.skipStatistics();
       await this.finish();
+      await this.page.waitForURL("/lovelace/0");
     }
   }
 

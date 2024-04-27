@@ -1,4 +1,4 @@
-import { type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 export class LoginPage {
   private readonly page: Page;
@@ -17,8 +17,9 @@ export class LoginPage {
 
   async goto() {
     await this.page.context().clearCookies();
-    await this.page.waitForLoadState("networkidle");
-    await this.page.goto("/");
+    await this.page.goto("/", { waitUntil: "networkidle" });
+    await expect(this.usernameField).toBeEditable();
+    await expect(this.passwordField).toBeEditable();
   }
 
   async login(username: string, password: string) {

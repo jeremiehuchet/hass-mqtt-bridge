@@ -6,14 +6,14 @@ settings:
 
 devDependencies:
   "@playwright/test":
-    specifier: ^1.39.0
-    version: 1.39.0
+    specifier: ^1.43.1
+    version: 1.43.1
   "@types/node":
-    specifier: ^20.8.10
-    version: 20.8.10
+    specifier: ^20.12.7
+    version: 20.12.7
   testcontainers:
-    specifier: ^10.4.0
-    version: 10.4.0
+    specifier: ^10.9.0
+    version: 10.9.0
 
 packages:
   /@balena/dockerignore@1.0.2:
@@ -23,15 +23,15 @@ packages:
       }
     dev: true
 
-  /@playwright/test@1.39.0:
+  /@playwright/test@1.43.1:
     resolution:
       {
-        integrity: sha512-3u1iFqgzl7zr004bGPYiN/5EZpRUSFddQBra8Rqll5N0/vfpqlP9I9EXqAoGacuAbX6c9Ulg/Cjqglp5VkK6UQ==,
+        integrity: sha512-HgtQzFgNEEo4TE22K/X7sYTYNqEMMTZmFS8kTq6m8hXj+m1D8TgwgIbumHddJa9h4yl4GkKb8/bgAl2+g7eDgA==,
       }
     engines: { node: ">=16" }
     hasBin: true
     dependencies:
-      playwright: 1.39.0
+      playwright: 1.43.1
     dev: true
 
   /@types/docker-modem@3.0.6:
@@ -40,33 +40,34 @@ packages:
         integrity: sha512-yKpAGEuKRSS8wwx0joknWxsmLha78wNMe9R2S3UNsVOkZded8UqOrV8KoeDXoXsjndxwyF3eIhyClGbO1SEhEg==,
       }
     dependencies:
-      "@types/node": 20.8.10
-      "@types/ssh2": 1.11.18
+      "@types/node": 20.12.7
+      "@types/ssh2": 1.15.0
     dev: true
 
-  /@types/dockerode@3.3.23:
+  /@types/dockerode@3.3.28:
     resolution:
       {
-        integrity: sha512-Lz5J+NFgZS4cEVhquwjIGH4oQwlVn2h7LXD3boitujBnzOE5o7s9H8hchEjoDK2SlRsJTogdKnQeiJgPPKLIEw==,
+        integrity: sha512-RjY96chW88t2QvSebCsec+mQYo3/nyOr+/tVcE+0ynlOg2m/i9wPE52DhptzF75QDlhv2uDYVPqKfHKeGTn6Fg==,
       }
     dependencies:
       "@types/docker-modem": 3.0.6
-      "@types/node": 20.8.10
+      "@types/node": 20.12.7
+      "@types/ssh2": 1.15.0
     dev: true
 
-  /@types/node@18.19.3:
+  /@types/node@18.19.31:
     resolution:
       {
-        integrity: sha512-k5fggr14DwAytoA/t8rPrIz++lXK7/DqckthCmoZOKNsEbJkId4Z//BqgApXBUGrGddrigYa1oqheo/7YmW4rg==,
+        integrity: sha512-ArgCD39YpyyrtFKIqMDvjz79jto5fcI/SVUs2HwB+f0dAzq68yqOdyaSivLiLugSziTpNXLQrVb7RZFmdZzbhA==,
       }
     dependencies:
       undici-types: 5.26.5
     dev: true
 
-  /@types/node@20.8.10:
+  /@types/node@20.12.7:
     resolution:
       {
-        integrity: sha512-TlgT8JntpcbmKUFzjhsyhGfP2fsiz1Mv56im6enJ905xG1DAYesxJaeSbGqQmAw8OWPdhyJGhGSQGKRNJ45u9w==,
+        integrity: sha512-wq0cICSkRLVaf3UGLMGItu/PtdY7oaXaI/RVU+xliKVOtRna3PRY57ZDfztpDL0n11vfymMUnXv8QwYCO7L1wg==,
       }
     dependencies:
       undici-types: 5.26.5
@@ -78,7 +79,7 @@ packages:
         integrity: sha512-Sy8tpEmCce4Tq0oSOYdfqaBpA3hDM8SoxoFh5vzFsu2oL+znzGz8oVWW7xb4K920yYMUY+PIG31qZnFMfPWNCg==,
       }
     dependencies:
-      "@types/node": 20.8.10
+      "@types/node": 20.12.7
     dev: true
 
   /@types/ssh2@0.5.52:
@@ -87,17 +88,17 @@ packages:
         integrity: sha512-lbLLlXxdCZOSJMCInKH2+9V/77ET2J6NPQHpFI0kda61Dd1KglJs+fPQBchizmzYSOJBgdTajhPqBO1xxLywvg==,
       }
     dependencies:
-      "@types/node": 20.8.10
+      "@types/node": 20.12.7
       "@types/ssh2-streams": 0.1.12
     dev: true
 
-  /@types/ssh2@1.11.18:
+  /@types/ssh2@1.15.0:
     resolution:
       {
-        integrity: sha512-7eH4ppQMFlzvn//zhwD54MWaITR1aSc1oFBye9vb76GZ2Y9PSFYdwVIwOlxRXWs5+1hifntXyt+8a6SUbOD7Hg==,
+        integrity: sha512-YcT8jP5F8NzWeevWvcyrrLB3zcneVjzYY9ZDSMAMboI+2zR1qYWFhwsyOFVzT7Jorn67vqxC0FRiw8YyG9P1ww==,
       }
     dependencies:
-      "@types/node": 18.19.3
+      "@types/node": 18.19.31
     dev: true
 
   /archiver-utils@2.1.0:
@@ -163,10 +164,10 @@ packages:
       safer-buffer: 2.1.2
     dev: true
 
-  /async-lock@1.4.0:
+  /async-lock@1.4.1:
     resolution:
       {
-        integrity: sha512-coglx5yIWuetakm3/1dsX9hxCNox22h7+V80RQOu2XUUMidtArxKoZoOtHUPuR84SycKTXzgGzAUR5hJxujyJQ==,
+        integrity: sha512-Az2ZTpuytrtqENulXwO3GGv1Bztugx6TT37NIo7imr/Qo0gsYiGtSdBa2B6fsXhTpVZDNfu1Qn3pk531e3q+nQ==,
       }
     dev: true
 
@@ -177,10 +178,10 @@ packages:
       }
     dev: true
 
-  /b4a@1.6.4:
+  /b4a@1.6.6:
     resolution:
       {
-        integrity: sha512-fpWrvyVHEKyeEvbKZTVOeZF3VSKKWtJxFIxX/jaVPf+cLbGUSitjb49pHLqPV2BUNNZ0LcoeEGfE/YCpyDYHIw==,
+        integrity: sha512-5Tk1HLk6b6ctmjIkAcU/Ujv/1WqiDl0F0JdRCR80VsOcUlHcu7pWeWRlOqQLHfDEsVx9YH/aif5AG4ehoCtTmg==,
       }
     dev: true
 
@@ -190,6 +191,59 @@ packages:
         integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==,
       }
     dev: true
+
+  /bare-events@2.2.2:
+    resolution:
+      {
+        integrity: sha512-h7z00dWdG0PYOQEvChhOSWvOfkIKsdZGkWr083FgN/HyoQuebSew/cgirYqh9SCuy/hRvxc5Vy6Fw8xAmYHLkQ==,
+      }
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /bare-fs@2.3.0:
+    resolution:
+      {
+        integrity: sha512-TNFqa1B4N99pds2a5NYHR15o0ZpdNKbAeKTE/+G6ED/UeOavv8RY3dr/Fu99HW3zU3pXpo2kDNO8Sjsm2esfOw==,
+      }
+    requiresBuild: true
+    dependencies:
+      bare-events: 2.2.2
+      bare-path: 2.1.2
+      bare-stream: 1.0.0
+    dev: true
+    optional: true
+
+  /bare-os@2.3.0:
+    resolution:
+      {
+        integrity: sha512-oPb8oMM1xZbhRQBngTgpcQ5gXw6kjOaRsSWsIeNyRxGed2w/ARyP7ScBYpWR1qfX2E5rS3gBw6OWcSQo+s+kUg==,
+      }
+    requiresBuild: true
+    dev: true
+    optional: true
+
+  /bare-path@2.1.2:
+    resolution:
+      {
+        integrity: sha512-o7KSt4prEphWUHa3QUwCxUI00R86VdjiuxmJK0iNVDHYPGo+HsDaVCnqCmPbf/MiW1ok8F4p3m8RTHlWk8K2ig==,
+      }
+    requiresBuild: true
+    dependencies:
+      bare-os: 2.3.0
+    dev: true
+    optional: true
+
+  /bare-stream@1.0.0:
+    resolution:
+      {
+        integrity: sha512-KhNUoDL40iP4gFaLSsoGE479t0jHijfYdIcxRn/XtezA2BaUD0NRf/JGRpsMq6dMNM+SrCrB0YSSo/5wBY4rOQ==,
+      }
+    requiresBuild: true
+    dependencies:
+      streamx: 2.16.1
+    dev: true
+    optional: true
 
   /base64-js@1.5.1:
     resolution:
@@ -315,7 +369,7 @@ packages:
     requiresBuild: true
     dependencies:
       buildcheck: 0.0.6
-      nan: 2.18.0
+      nan: 2.19.0
     dev: true
     optional: true
 
@@ -354,14 +408,14 @@ packages:
       ms: 2.1.2
     dev: true
 
-  /docker-compose@0.24.3:
+  /docker-compose@0.24.8:
     resolution:
       {
-        integrity: sha512-x3/QN3AIOMe7j2c8f/jcycizMft7dl8MluoB9OGPAYCyKHHiPUFqI9GjCcsU0kYy24vYKMCcfR6+5ZaEyQlrxg==,
+        integrity: sha512-plizRs/Vf15H+GCVxq2EUvyPK7ei9b/cVesHvjnX4xaXjM9spHe2Ytq0BitndFgvTJ3E3NljPNUEl7BAN43iZw==,
       }
     engines: { node: ">= 6.0.0" }
     dependencies:
-      yaml: 2.3.4
+      yaml: 2.4.1
     dev: true
 
   /docker-modem@3.0.8:
@@ -374,7 +428,7 @@ packages:
       debug: 4.3.4
       readable-stream: 3.6.2
       split-ca: 1.0.1
-      ssh2: 1.14.0
+      ssh2: 1.15.0
     transitivePeerDependencies:
       - supports-color
     dev: true
@@ -581,10 +635,10 @@ packages:
       }
     dev: true
 
-  /nan@2.18.0:
+  /nan@2.19.0:
     resolution:
       {
-        integrity: sha512-W7tfG7vMOGtD30sHoZSSc/JVYiyDPEyQVso/Zz+/uQd0B0L46gtC+pHha5FFMRpil6fm/AoEcRWyOVi4+E/f8w==,
+        integrity: sha512-nO1xXxfh/RWNxfd/XPfbIfFk5vgLsAxUR9y5O0cHMJu/AW9U95JLXqthYHjEp+8gQ5p96K9jUp8nbVOxCdRbtw==,
       }
     requiresBuild: true
     dev: true
@@ -630,24 +684,24 @@ packages:
     engines: { node: ">=0.10.0" }
     dev: true
 
-  /playwright-core@1.39.0:
+  /playwright-core@1.43.1:
     resolution:
       {
-        integrity: sha512-+k4pdZgs1qiM+OUkSjx96YiKsXsmb59evFoqv8SKO067qBA+Z2s/dCzJij/ZhdQcs2zlTAgRKfeiiLm8PQ2qvw==,
+        integrity: sha512-EI36Mto2Vrx6VF7rm708qSnesVQKbxEWvPrfA1IPY6HgczBplDx7ENtx+K2n4kJ41sLLkuGfmb0ZLSSXlDhqPg==,
       }
     engines: { node: ">=16" }
     hasBin: true
     dev: true
 
-  /playwright@1.39.0:
+  /playwright@1.43.1:
     resolution:
       {
-        integrity: sha512-naE5QT11uC/Oiq0BwZ50gDmy8c8WLPRTEWuSSFVG2egBka/1qMoSqYQcROMT9zLwJ86oPofcTH2jBY/5wWOgIw==,
+        integrity: sha512-V7SoH0ai2kNt1Md9E3Gwas5B9m8KR2GVvwZnAI6Pg0m3sh7UvgiYhRrhsziCmqMJNouPckiOhk8T+9bSAK0VIA==,
       }
     engines: { node: ">=16" }
     hasBin: true
     dependencies:
-      playwright-core: 1.39.0
+      playwright-core: 1.43.1
     optionalDependencies:
       fsevents: 2.3.2
     dev: true
@@ -695,6 +749,7 @@ packages:
       {
         integrity: sha512-kJt5qhMxoszgU/62PLP1CJytzd2NKetjSRnyuj31fDd3Rlcz3fzlFdFLD1SItunPwyqEOkca6GbV612BWfaBag==,
       }
+    requiresBuild: true
     dev: true
 
   /readable-stream@2.3.8:
@@ -741,16 +796,6 @@ packages:
     engines: { node: ">= 4" }
     dev: true
 
-  /rimraf@3.0.2:
-    resolution:
-      {
-        integrity: sha512-JZkJMZkAGFFPP2YqXZXPbMlMBgsxzE8ILs4lMIX/2o0L9UBw9O/Y3o6wFw/i9YLapcUJWwqbi3kdxIPdC62TIA==,
-      }
-    hasBin: true
-    dependencies:
-      glob: 7.2.3
-    dev: true
-
   /safe-buffer@5.1.2:
     resolution:
       {
@@ -793,13 +838,13 @@ packages:
       }
     dependencies:
       "@types/ssh2": 0.5.52
-      ssh2: 1.14.0
+      ssh2: 1.15.0
     dev: true
 
-  /ssh2@1.14.0:
+  /ssh2@1.15.0:
     resolution:
       {
-        integrity: sha512-AqzD1UCqit8tbOKoj6ztDDi1ffJZ2rV2SwlgrVVrHPkV5vWqGJOVp5pmtj18PunkPJAuKQsnInyKV+/Nb2bUnA==,
+        integrity: sha512-C0PHgX4h6lBxYx7hcXwu3QWdh4tg6tZZsTfXcdvc5caW/EMxaB4H9dWsl7qk+F7LAW762hp8VbXOX7x4xUYvEw==,
       }
     engines: { node: ">=10.16.0" }
     requiresBuild: true
@@ -808,17 +853,19 @@ packages:
       bcrypt-pbkdf: 1.0.2
     optionalDependencies:
       cpu-features: 0.0.9
-      nan: 2.18.0
+      nan: 2.19.0
     dev: true
 
-  /streamx@2.15.6:
+  /streamx@2.16.1:
     resolution:
       {
-        integrity: sha512-q+vQL4AAz+FdfT137VF69Cc/APqUbxy+MDOImRrMvchJpigHj9GksgDU2LYbO9rx7RX6osWgxJB2WxhYv4SZAw==,
+        integrity: sha512-m9QYj6WygWyWa3H1YY69amr4nVgy61xfjys7xO7kviL5rfIEc2naf+ewFiOA+aEJD7y0JO3h2GoiUv4TDwEGzQ==,
       }
     dependencies:
       fast-fifo: 1.3.2
       queue-tick: 1.0.1
+    optionalDependencies:
+      bare-events: 2.2.2
     dev: true
 
   /string_decoder@1.1.1:
@@ -851,15 +898,17 @@ packages:
       tar-stream: 2.2.0
     dev: true
 
-  /tar-fs@3.0.4:
+  /tar-fs@3.0.6:
     resolution:
       {
-        integrity: sha512-5AFQU8b9qLfZCX9zp2duONhPmZv0hGYiBPJsyUdqMjzq/mqVpy/rEUSeHk1+YitmxugaptgBh5oDGU3VsAJq4w==,
+        integrity: sha512-iokBDQQkUyeXhgPYaZxmczGPhnhXZ0CmrqI+MOb/WFGS9DW5wnfrLgtjUJBvz50vQ3qfRwJ62QVoCFu8mPVu5w==,
       }
     dependencies:
-      mkdirp-classic: 0.5.3
       pump: 3.0.0
-      tar-stream: 3.1.6
+      tar-stream: 3.1.7
+    optionalDependencies:
+      bare-fs: 2.3.0
+      bare-path: 2.1.2
     dev: true
 
   /tar-stream@2.2.0:
@@ -876,51 +925,49 @@ packages:
       readable-stream: 3.6.2
     dev: true
 
-  /tar-stream@3.1.6:
+  /tar-stream@3.1.7:
     resolution:
       {
-        integrity: sha512-B/UyjYwPpMBv+PaFSWAmtYjwdrlEaZQEhMIBFNC5oEG8lpiW8XjcSdmEaClj28ArfKScKHs2nshz3k2le6crsg==,
+        integrity: sha512-qJj60CXt7IU1Ffyc3NJMjh6EkuCFej46zUqJ4J7pqYlThyd9bO0XBTmcOIhSzZJVWfsLks0+nle/j538YAW9RQ==,
       }
     dependencies:
-      b4a: 1.6.4
+      b4a: 1.6.6
       fast-fifo: 1.3.2
-      streamx: 2.15.6
+      streamx: 2.16.1
     dev: true
 
-  /testcontainers@10.4.0:
+  /testcontainers@10.9.0:
     resolution:
       {
-        integrity: sha512-kMmJXOAuJeQTRbGSrIEBaAzTzGzmY4+DU5xW5CxgzxgywCoy53ubeiTh3eZ1rzT54YR3zf0nijlb/l7OT4E+/g==,
+        integrity: sha512-LN+cKAOd61Up9SVMJW+3VFVGeVQG8JBqZhEQo2U0HBfIsAynyAXcsLBSo+KZrOfy9SBz7pGHctWN/KabLDbNFA==,
       }
     dependencies:
       "@balena/dockerignore": 1.0.2
-      "@types/dockerode": 3.3.23
+      "@types/dockerode": 3.3.28
       archiver: 5.3.2
-      async-lock: 1.4.0
+      async-lock: 1.4.1
       byline: 5.0.0
       debug: 4.3.4
-      docker-compose: 0.24.3
+      docker-compose: 0.24.8
       dockerode: 3.3.5
       get-port: 5.1.1
       node-fetch: 2.7.0
       proper-lockfile: 4.1.2
       properties-reader: 2.3.0
       ssh-remote-port-forward: 1.0.4
-      tar-fs: 3.0.4
-      tmp: 0.2.1
+      tar-fs: 3.0.6
+      tmp: 0.2.3
     transitivePeerDependencies:
       - encoding
       - supports-color
     dev: true
 
-  /tmp@0.2.1:
+  /tmp@0.2.3:
     resolution:
       {
-        integrity: sha512-76SUhtfqR2Ijn+xllcI5P1oyannHNHByD80W1q447gU3mp9G9PSpGdWmjUOHRDPiHYacIk66W7ubDTuPF3BEtQ==,
+        integrity: sha512-nZD7m9iCPC5g0pYmcaxogYKggSfLsdxl8of3Q/oIbqCqLLIO9IAF0GWjX1z9NZRHPiXv8Wex4yDCaZsgEw0Y8w==,
       }
-    engines: { node: ">=8.17.0" }
-    dependencies:
-      rimraf: 3.0.2
+    engines: { node: ">=14.14" }
     dev: true
 
   /tr46@0.0.3:
@@ -975,12 +1022,13 @@ packages:
       }
     dev: true
 
-  /yaml@2.3.4:
+  /yaml@2.4.1:
     resolution:
       {
-        integrity: sha512-8aAvwVUSHpfEqTQ4w/KMlf3HcRdt50E5ODIQJBw1fQ5RL34xabzxtUlzTXVqc4rkZsPbvrXKWnABCD7kWSmocA==,
+        integrity: sha512-pIXzoImaqmfOrL7teGUBt/T7ZDnyeGBWyXQBvOVhLkWLN37GXv8NMLK406UY6dS51JfcQHsmcW5cJ441bHg6Lg==,
       }
     engines: { node: ">= 14" }
+    hasBin: true
     dev: true
 
   /zip-stream@4.1.1:

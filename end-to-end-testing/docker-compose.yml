@@ -2,17 +2,15 @@ version: "3"
 
 services:
   homeassistant:
-    image: homeassistant/home-assistant
+    image: homeassistant/home-assistant:2024.4
     volumes:
       - ./docker-compose/hass/configuration.yaml:/config/configuration.yaml
       - /etc/localtime:/etc/localtime:ro
     ports:
       - 8123:8123
-    depends_on:
-      - mosquitto
 
   mosquitto:
-    image: eclipse-mosquitto
+    image: eclipse-mosquitto:2.0
     volumes:
       - "./docker-compose/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"
       - "./docker-compose/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro"
@@ -21,7 +19,7 @@ services:
       - 1883:1883
 
   mosquitto-debug:
-    image: eclipse-mosquitto
+    image: eclipse-mosquitto:2.0
     entrypoint: mosquitto_sub
     command:
       - --id
@@ -29,8 +27,6 @@ services:
       - --url
       - mqtt://hass:hass@mosquitto:1883/#
       - --verbose
-    depends_on:
-      - mosquitto
 
   rika-firenet-mock:
     build:
@@ -62,6 +58,3 @@ services:
       SOMFY_CLIENT_SECRET: somfy secret
       SOMFY_USERNAME: user@somfy.com
       SOMFY_PASSWORD: user password
-    depends_on:
-      - mosquitto
-      - rika-firenet-mock

@@ -10,18 +10,16 @@ export class DevicesPage {
   }
 
   async goto() {
-    await this.page.goto("/config/devices/dashboard");
+    await this.page.goto("/config/devices/dashboard", { waitUntil: "load" });
   }
 
   async hasDevice(deviceName: string) {
-    const matchingDevicesLocator = this.devicesList.filter({
-      hasText: deviceName,
-    });
-    await expect(matchingDevicesLocator).toHaveCount(1);
+    await this.devicesList.getByText(deviceName).scrollIntoViewIfNeeded();
+    await expect(this.devicesList.getByText(deviceName)).toBeVisible();
   }
 
   async gotoDevice(deviceName: string) {
-    this.devicesList
+    await this.devicesList
       .filter({
         hasText: deviceName,
       })

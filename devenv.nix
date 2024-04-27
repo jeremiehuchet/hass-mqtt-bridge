@@ -17,4 +17,10 @@
 
   pre-commit.hooks.rustfmt.enable = true;
   pre-commit.hooks.prettier.enable = true;
+
+  scripts.end-to-end-tests.exec = ''
+    cd end-to-end-testing
+    pnpm install
+    pnpm test
+  '';
 }

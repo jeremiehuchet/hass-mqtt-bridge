@@ -4,8 +4,10 @@ import { LoginPage } from "./pages/LoginPage";
 import { DevicesPage } from "./pages/settings/DevicesPage";
 import { MqttSettingsPage } from "./pages/settings/MqttSettingsPage";
 import { DeviceInfoPage } from "./pages/settings/DeviceInfoPage";
+import { ScreenshotsFixture } from "./screenshots";
 
 type Fixtures = {
+  screenshots: ScreenshotsFixture;
   onboardingPage: OnboardingPage;
   loginPage: LoginPage;
   mqttSettingsPage: MqttSettingsPage;
@@ -14,6 +16,9 @@ type Fixtures = {
 };
 
 export const test = base.extend<Fixtures>({
+  screenshots: async ({ page }, use) => {
+    await use(new ScreenshotsFixture(page));
+  },
   onboardingPage: async ({ page }, use) => {
     await use(new OnboardingPage(page));
   },
