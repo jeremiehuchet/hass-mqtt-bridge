@@ -79,6 +79,7 @@ export class OnboardingPage {
 
   async start() {
     await this.startButton.click();
+    await expect(this.nameField).toBeFocused();
   }
   async createAccount(name: string, username: string, password: string) {
     await this.nameField.fill(name);
