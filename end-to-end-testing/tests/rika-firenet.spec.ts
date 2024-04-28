@@ -1,19 +1,11 @@
-import { expect, test } from "../fixtures";
-import {
-  EnvironmentStatus,
-  startAndInitializeStack,
-} from "../fixtures/stack-utils";
+import { expect, test, testPlatform } from "../fixtures";
 
-let environment: EnvironmentStatus | undefined;
-
-test.beforeAll(async ({ browser }) => {
-  environment = await startAndInitializeStack();
+test.beforeAll(async () => {
+  await testPlatform.up();
 });
 
 test.afterAll(async () => {
-  environment?.stack.down({
-    removeVolumes: true,
-  });
+  await testPlatform.down();
 });
 
 test.beforeEach(async ({ onboardingPage, mqttSettingsPage, loginPage }) => {
@@ -26,14 +18,13 @@ test.beforeEach(async ({ onboardingPage, mqttSettingsPage, loginPage }) => {
   await mqttSettingsPage.goto();
   await mqttSettingsPage.setConfig("mosquitto", 1883, "hass", "hass");
 
-  await expect(async () => {
-    const rikaEntities = environment?.registeredEntities.filter((name) =>
-      name.startsWith("sensor.rika_"),
-    );
-    expect(rikaEntities?.length).toBeGreaterThan(10);
-  }, "it seems hass-mqtt-bridge didn't published Rika stoves entities after 10 seconds").toPass(
-    { timeout: 10000 },
-  );
+  await expect
+    .poll(() => testPlatform.countRegisteredEntities(/^sensor\.rika_/), {
+      message:
+        "it seems hass-mqtt-bridge didn't published Rika stoves entities after 10 seconds",
+      timeout: 10000,
+    })
+    .toBeGreaterThan(10);
 });
 
 test.describe("Rika Firenet bridge", () => {

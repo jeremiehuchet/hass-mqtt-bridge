@@ -33,13 +33,14 @@ services:
       context: https://github.com/jeremiehuchet/rika-firenet-api-rs.git#:mock
     ports:
       - 3000:3000
+    stop_signal: SIGKILL
 
   somfy-protect-mock:
-    container_name: somfy-protect-mock
     build:
       context: https://github.com/jeremiehuchet/somfy-protect-api-rs.git#:mock
     ports:
       - 3001:3000
+    stop_signal: SIGKILL
 
   hass-mqtt-bridge:
     build:

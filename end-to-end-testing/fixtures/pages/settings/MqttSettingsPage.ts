@@ -1,4 +1,5 @@
 import { Locator, Page, expect } from "@playwright/test";
+import { testPlatform } from "../..";
 
 export class MqttSettingsPage {
   private readonly page: Page;
@@ -56,6 +57,13 @@ export class MqttSettingsPage {
       await this.submitButton.click();
 
       await this.finishButton.click();
+      await expect
+        .poll(() => testPlatform.getMosquittoMessages(), {
+          message:
+            "homeassistant should have sent an 'online' message to MQTT broker",
+          timeout: 10000,
+        })
+        .toContain("homeassistant/status online");
     }
   }
 }
