@@ -5,16 +5,28 @@ use crate::{
 use actix::prelude::*;
 use async_stream::stream;
 use chrono::Duration;
-use hass_mqtt_autodiscovery::mqtt::{
-    common::{Availability, AvailabilityCheck, Device, EntityCategory, SensorStateClass},
-    sensor::{Sensor, SensorDeviceClass},
-    units::{MassUnit, SignalStrengthUnit, TempUnit, TimeUnit, Unit},
+use hass_mqtt_autodiscovery::{
+    mqtt::{
+        climate::Climate,
+        common::{
+            Availability, AvailabilityCheck, Device, EntityCategory, SensorStateClass,
+            TemperatureUnit,
+        },
+        device_classes::{SensorDeviceClass, SwitchDeviceClass},
+        select::Select,
+        sensor::Sensor,
+        switch::Switch,
+        units::{MassUnit, SignalStrengthUnit, TempUnit, TimeUnit, Unit},
+    },
+    Entity,
 };
+use indoc::indoc;
 use lazy_static::lazy_static;
 use log::{debug, error, info};
 use rika_firenet_client::model::StatusDetail;
 use rika_firenet_client::HasDetailledStatus;
 use rika_firenet_client::{RikaFirenetClient, StoveStatus};
+use rust_decimal_macros::dec;
 use std::{collections::HashMap, fmt::Display, ops::Deref};
 
 lazy_static! {
@@ -91,25 +103,29 @@ impl Actor for RikaActor {
 }
 
 impl StreamHandler<StoveStatus> for RikaActor {
-    fn handle(&mut self, stove_status: StoveStatus, ctx: &mut Self::Context) {
+    fn handle(&mut self, stove_status: StoveStatus, _ctx: &mut Self::Context) {
         let stove_id = stove_status.stove_id.clone();
         let new_entities = RikaEntities::from(&stove_status);
         let old_entities = self.stoves.insert(stove_id, new_entities.clone());
 
         if Some(&new_entities) != old_entities.as_ref() {
             debug!("Publishing configuration for {new_entities}");
-            for entity in new_entities.collect() {
-                self.mqtt_addr.do_send(EntityConfiguration::Sensor(entity));
+            for entity in new_entities.sensors() {
+                self.mqtt_addr
+                    .do_send(EntityConfiguration(Entity::Sensor(entity)));
             }
+            self.mqtt_addr
+                .do_send(EntityConfiguration(Entity::Climate(new_entities.climate)));
         }
 
-        debug!("Publishing data for {new_entities}");
+        debug!("Publishing data");
 
         let original_payload = serde_json::to_value(&stove_status).unwrap_or_default();
         let mut enriched_payload = original_payload.as_object().unwrap().clone();
+        let status_details = &stove_status.get_status_details();
         enriched_payload.insert(
             "status".to_string(),
-            status_detail_to_str(&stove_status.get_status_details()).into(),
+            status_detail_to_str(status_details).into(),
         );
 
         self.mqtt_addr.do_send(PublishEntityData::new(
@@ -157,6 +173,10 @@ struct RikaEntities {
     ignition_sensor: Sensor,
     onoff_cycles_sensor: Sensor,
     parameter_error_count: Vec<Sensor>,
+    climate: Climate,
+
+    onoff_button: Switch,
+    mode_select: Select,
 }
 
 impl Display for RikaEntities {
@@ -166,7 +186,7 @@ impl Display for RikaEntities {
 }
 
 impl RikaEntities {
-    fn collect(&self) -> Vec<Sensor> {
+    fn sensors(&self) -> Vec<Sensor> {
         let mut entities = self.parameter_error_count.clone();
         entities.push(self.status_sensor.clone());
         entities.push(self.room_temperature_sensor.clone());
@@ -190,13 +210,16 @@ impl From<&StoveStatus> for RikaEntities {
         let unique_id = &format!("{manufacturer}_{model}_{name}-{id}").slug();
         let object_id = &format!("{manufacturer}_{model}_{name}").slug();
 
-        let state_topic = format!("rika-firenet/{unique_id}/state");
-
         let version = stove_status
             .sensors
             .parameter_version_main_board
             .to_string();
         let (version_major, version_minor) = version.split_at(1);
+
+        let topic_prefix = &format!("rika-firenet/{unique_id}");
+        let state_topic = "~/state";
+
+        let origin = app_infos::origin();
 
         let device = Device::default()
             .name(format!("Stove {name}"))
@@ -214,15 +237,15 @@ impl From<&StoveStatus> for RikaEntities {
         .expire_after(RIKA_SENSOR_EXPIRATION_TIME.num_seconds().unsigned_abs());
 
         let sensor_defaults = Sensor::default()
-            .topic_prefix(format!("rika-firenet/{unique_id}"))
-            .state_topic("~/state")
-            .origin(app_infos::origin())
-            .device(device)
-            .availability(availability);
+            .topic_prefix(topic_prefix)
+            .state_topic(state_topic)
+            .origin(origin.clone())
+            .device(device.clone())
+            .availability(availability.clone());
 
         RikaEntities {
             display_name: format!("{name} (id={id})"),
-            state_topic: state_topic.clone(),
+            state_topic: format!("{topic_prefix}/state"),
             status_sensor: sensor_defaults
                 .clone()
                 .name("Status")
@@ -323,6 +346,91 @@ impl From<&StoveStatus> for RikaEntities {
                         .state_class(SensorStateClass::TotalIncreasing)
                 })
                 .collect(),
+            climate: Climate::default()
+                .topic_prefix(topic_prefix)
+                .origin(origin.clone())
+                .device(device.clone())
+                .availability(availability.clone())
+                .action_template(indoc! {"
+                    {%- if json_value.status in ['Ignition', 'Startup', 'Control', 'Cleaning', 'Burnout'] -%}
+                        heating
+                    {%- elif json_value.status == 'Standby' -%}
+                        idle
+                    {%- else -%}
+                        off
+                    {%- endif -%}
+                "})
+                .temperature_command_topic("~/temp/set")
+                .current_temperature_template(indoc! {"
+                    {%- if json_value.controls.operatingMode == 2 -%}
+                        {{ value_json.controls.targetTemperature }}
+                    {%- endif -%}
+                "})
+                .icon("mdi:fire")
+                .max_temp(dec!(28.0))
+                .min_temp(dec!(14.0))
+                .preset_mode_command_topic("~/command/set")
+                .preset_mode_value_template("{% if json_value.controls.operatingMode == 2 %}comfort{% endif %}")
+                .preset_modes(vec!["Manual", "Auto", "Comfort"])
+                .mode_command_topic("~/mode/set")
+                .mode_state_template(indoc! {"
+                    {%- if json_value.controls.onOff == True -%}
+                        heat
+                    {%- else -%}
+                        off
+                    {%- endif -%}
+                "})
+                .modes(vec!["off", "heat"])
+                .object_id(format!("{object_id}"))
+                .unique_id(format!("{unique_id}"))
+                .power_command_topic("~/power/set".to_string())
+                .precision(dec!(0.1))
+                .temperature_state_template("{{ value_json.sensors.inputRoomTemperature }}")
+                .temperature_unit(TemperatureUnit::Celcius)
+                .temp_step(dec!(1)),
+            onoff_button: Switch::default()
+                .name("Power")
+                .object_id(format!("{object_id}_power"))
+                .unique_id(format!("{unique_id}_power"))
+                .icon("mdi:power")
+                .topic_prefix(topic_prefix)
+                .origin(origin.clone())
+                .device(device.clone())
+                .availability(availability.clone())
+                .command_topic("~/set")
+                .payload_on("on")
+                .payload_off("off")
+                .device_class(SwitchDeviceClass::Switch)
+                .enabled_by_default(false)
+                .state_topic("~/state")
+                .value_template(indoc! {"
+                    {%- if json_value.controls.onOff == True -%}
+                        on
+                    {%- else -%}
+                        off
+                    {%- endif -%}
+                "}),
+            mode_select: Select::default()
+                .name("Mode")
+                .object_id(format!("{object_id}_mode"))
+                .unique_id(format!("{unique_id}_mode"))
+                .icon("mdi:format-list-bulleted")
+                .topic_prefix(topic_prefix)
+                .origin(origin.clone())
+                .device(device.clone())
+                .availability(availability.clone())
+                .state_topic("~/state")
+                .value_template(indoc! {"
+                    {%- if json_value.controls.operatingMode == 0 -%}
+                        Manual
+                    {%- elif json_value.controls.operatingMode == 1 -%}
+                        Auto
+                    {%- else -%}
+                        Comfort
+                    {%- endif -%}
+                "})
+                .options(vec!["Manual", "Auto", "Comfort"])
+                .command_topic("~/set"),
         }
     }
 }

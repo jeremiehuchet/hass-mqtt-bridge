@@ -1,9 +1,6 @@
 use actix::prelude::*;
 use async_stream::stream;
-use hass_mqtt_autodiscovery::{
-    mqtt::{binary_sensor::BinarySensor, number::Number, sensor::Sensor},
-    HomeAssistantMqtt,
-};
+use hass_mqtt_autodiscovery::{Entity, HomeAssistantMqtt};
 use log::{debug, error, info, trace};
 use rumqttc::v5::{
     mqttbytes::{
@@ -100,11 +97,7 @@ impl StreamHandler<Result<Event, ConnectionError>> for MqttActor {
 
 #[derive(Message, Clone)]
 #[rtype(result = "()")]
-pub enum EntityConfiguration {
-    BinarySensor(BinarySensor),
-    Number(Number),
-    Sensor(Sensor),
-}
+pub struct EntityConfiguration(pub Entity);
 
 impl Handler<EntityConfiguration> for MqttActor {
     type Result = ();
@@ -112,13 +105,7 @@ impl Handler<EntityConfiguration> for MqttActor {
     fn handle(&mut self, msg: EntityConfiguration, ctx: &mut Self::Context) -> Self::Result {
         if let Some(ha_mqtt) = self.ha_mqtt.clone() {
             async move {
-                let result = match msg {
-                    EntityConfiguration::BinarySensor(binary_sensor) => {
-                        ha_mqtt.publish_binary_sensor(binary_sensor).await
-                    }
-                    EntityConfiguration::Sensor(sensor) => ha_mqtt.publish_sensor(sensor).await,
-                    EntityConfiguration::Number(number) => ha_mqtt.publish_number(number).await,
-                };
+                let result = ha_mqtt.publish_entity(msg.0).await;
                 if let Err(error) = result {
                     error!("Unable to publish entity: {error}")
                 }

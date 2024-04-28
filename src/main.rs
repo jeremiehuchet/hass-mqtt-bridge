@@ -1,9 +1,10 @@
-use actix::{Actor, System};
+use actix::Actor;
 use actix_web::{middleware::Logger, App, HttpServer};
 use anyhow::Result;
-use clap::{ArgGroup, Parser};
+use clap::Parser;
 use log::{debug, error, info};
-use misc::{Sluggable, SuffixStrip};
+use misc::app_infos;
+use misc::SuffixStrip;
 use mqtt::MqttActor;
 use rika::RikaActor;
 use rika_firenet_client::RikaFirenetClientBuilder;
@@ -137,9 +138,12 @@ async fn main() -> Result<()> {
         (_, _, _, _) => debug!("No configuration for Somfy Protect"),
     }
 
+    info!("{} version {}", app_infos::name(), app_infos::version());
+
     HttpServer::new(move || App::new().wrap(Logger::default()))
         .bind("127.0.0.1:8080")?
         .run()
         .await?;
+
     Ok(())
 }

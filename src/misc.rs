@@ -8,10 +8,14 @@ pub(crate) mod app_infos {
     use package_info_derive::PackageInfo;
 
     #[derive(PackageInfo)]
-    struct CargoPackageInfo {}
+    struct CargoPackageInfo;
 
     pub fn name() -> String {
         CargoPackageInfo::name().unwrap_or("unknown-package".to_string())
+    }
+
+    pub fn version() -> String {
+        CargoPackageInfo::version().unwrap_or("unknown-version".to_string())
     }
 
     pub(crate) fn origin() -> Origin {

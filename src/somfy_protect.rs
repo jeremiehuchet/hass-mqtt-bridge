@@ -5,13 +5,18 @@ use crate::{
 use actix::prelude::*;
 use async_stream::stream;
 use chrono::Duration as ChronoDuration;
-use hass_mqtt_autodiscovery::mqtt::{
-    binary_sensor::{BinarySensor, BinarySensorDeviceClass},
-    common::{
-        Availability, AvailabilityCheck, Device, DeviceConnection, EntityCategory, SensorStateClass,
+use hass_mqtt_autodiscovery::{
+    mqtt::{
+        binary_sensor::BinarySensor,
+        common::{
+            Availability, AvailabilityCheck, Device, DeviceConnection, EntityCategory,
+            SensorStateClass,
+        },
+        device_classes::{BinarySensorDeviceClass, SensorDeviceClass},
+        sensor::Sensor,
+        units::{PercentageUnit, SignalStrengthUnit, TempUnit, Unit},
     },
-    sensor::{Sensor, SensorDeviceClass},
-    units::{PercentageUnit, SignalStrengthUnit, TempUnit, Unit},
+    Entity,
 };
 use lazy_static::lazy_static;
 use log::{error, info, warn};
@@ -563,10 +568,10 @@ impl AlarmDevice {
 
         let mut entities = Vec::new();
         for sensor in sensors {
-            entities.push(EntityConfiguration::Sensor(sensor));
+            entities.push(EntityConfiguration(Entity::Sensor(sensor)));
         }
         for binary_sensor in binary_sensors {
-            entities.push(EntityConfiguration::BinarySensor(binary_sensor));
+            entities.push(EntityConfiguration(Entity::BinarySensor(binary_sensor)));
         }
         entities
     }
