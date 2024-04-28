@@ -44,7 +44,7 @@ export class TestPlatform {
   constructor() {}
 
   async up() {
-    const env = await dockerCompose.up();
+    const env = await dockerCompose.withBuild().up();
     const haLogs = await env.getContainer("homeassistant-1").logs();
     haLogs.on("data", (line: string) => {
       const parts =
