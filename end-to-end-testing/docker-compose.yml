@@ -24,9 +24,7 @@ services:
       - debug-all
       - --url
       - mqtt://hass:hass@mosquitto:1883/#
-      - --pretty
-      - -F
-      - "%t %J"
+      - --verbose
     depends_on:
       - mosquitto
 
@@ -49,7 +47,7 @@ services:
       context: ../
       dockerfile: end-to-end-testing/docker-compose/hass-mqtt-bridge/Dockerfile
     environment:
-      RUST_LOG: info,hass_mqtt_bridge=debug,hass_mqtt_bridge::rika=trace
+      RUST_LOG: info,hass_mqtt_bridge:debug
       MQTT_BROKER_URL: mqtt://mosquitto:1883
       MQTT_USERNAME: hass
       MQTT_PASSWORD: hass
