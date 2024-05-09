@@ -24,7 +24,9 @@ services:
       - debug-all
       - --url
       - mqtt://hass:hass@mosquitto:1883/#
-      - --verbose
+      - --pretty
+      - -F
+      - "%t %J"
     depends_on:
       - mosquitto
 
@@ -47,16 +49,16 @@ services:
       context: ../
       dockerfile: end-to-end-testing/docker-compose/hass-mqtt-bridge/Dockerfile
     environment:
-      RUST_LOG: info,hass_mqtt_bridge:debug
+      RUST_LOG: info,hass_mqtt_bridge=debug,hass_mqtt_bridge::rika=trace
       MQTT_BROKER_URL: mqtt://mosquitto:1883
       MQTT_USERNAME: hass
       MQTT_PASSWORD: hass
       RIKA_BASEURL: http://rika-firenet-mock:3000
       RIKA_USERNAME: registered-user@rika-firenet.com
       RIKA_PASSWORD: secret
-      SOMFY_API_BASEURL: http://somfy-protect-mock:3000/api
-      SOMFY_AUTH_BASEURL: http://somfy-protect-mock:3000/auth
-      SOMFY_CLIENT_ID: somfy
-      SOMFY_CLIENT_SECRET: somfy secret
-      SOMFY_USERNAME: user@somfy.com
-      SOMFY_PASSWORD: user password
+      #SOMFY_API_BASEURL: http://somfy-protect-mock:3000/api
+      #SOMFY_AUTH_BASEURL: http://somfy-protect-mock:3000/auth
+      #SOMFY_CLIENT_ID: somfy
+      #SOMFY_CLIENT_SECRET: somfy secret
+      #SOMFY_USERNAME: user@somfy.com
+      #SOMFY_PASSWORD: user password
