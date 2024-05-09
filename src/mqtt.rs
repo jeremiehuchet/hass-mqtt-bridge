@@ -1,13 +1,19 @@
+use std::{
+    collections::{HashMap, HashSet},
+    iter::Map,
+};
+
 use actix::prelude::*;
+use anyhow::{anyhow, Error};
 use async_stream::stream;
 use hass_mqtt_autodiscovery::{Entity, HomeAssistantMqtt};
 use log::{debug, error, info, trace};
 use rumqttc::v5::{
     mqttbytes::{
-        v5::{ConnAck, Packet},
+        v5::{ConnAck, Packet, Publish},
         QoS,
     },
-    AsyncClient, ConnectionError, Event, MqttOptions,
+    AsyncClient, ClientError, ConnectionError, Event, MqttOptions,
 };
 use serde_json::Value;
 use url::Url;
@@ -22,6 +28,7 @@ pub struct MqttActor {
     mqtt_options: MqttOptions,
     mqtt_client: Option<AsyncClient>,
     ha_mqtt: Option<HomeAssistantMqtt>,
+    listeners: HashSet<Recipient<MqttMessage>>,
 }
 
 impl MqttActor {
@@ -40,13 +47,14 @@ impl MqttActor {
             mqtt_options,
             mqtt_client: None,
             ha_mqtt: None,
+            listeners: HashSet::new(),
         }
     }
 
     fn subscribe_ha_events(&self, ctx: &mut Context<Self>, ack: ConnAck) {
         if let Some(client) = self.mqtt_client.clone() {
             async move {
-                client
+                let _ = client
                     .subscribe(BIRTH_LAST_WILL_TOPIC, QoS::AtLeastOnce)
                     .await;
             }
@@ -56,11 +64,20 @@ impl MqttActor {
     }
 
     fn handle_error(&self, error: ConnectionError) {
-        error!("error: {error}");
+        error!("error response from server: {error} (hint: see server logs)");
     }
 
     fn handle_event(&self, event: Event) {
-        trace!("event: {event:?}");
+        trace!("event from server: {event:?}");
+        match event {
+            Event::Incoming(Packet::Publish(publish)) => {
+                let message = MqttMessage::from(publish);
+                for recipient in &self.listeners {
+                    recipient.do_send(message.clone());
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -149,5 +166,81 @@ impl Handler<PublishEntityData> for MqttActor {
             }
             None => error!("MQTT client not available"),
         }
+    }
+}
+
+#[derive(Message, Clone, Debug)]
+#[rtype(result = "Result<SubscribeSuccess, SubscribeError>")]
+pub struct Subscribe {
+    topic: String,
+    recipient: Recipient<MqttMessage>,
+}
+
+impl Subscribe {
+    pub fn new(topic: String, recipient: Recipient<MqttMessage>) -> Self {
+        Subscribe { topic, recipient }
+    }
+}
+
+#[derive(Debug)]
+pub struct SubscribeSuccess {
+    pub topic: String,
+}
+
+impl SubscribeSuccess {
+    pub fn new(topic: String) -> Self {
+        SubscribeSuccess { topic }
+    }
+}
+
+#[derive(Debug)]
+pub struct SubscribeError {
+    pub topic: String,
+    pub error: ClientError,
+}
+
+impl SubscribeError {
+    pub fn new(topic: String, error: ClientError) -> Self {
+        SubscribeError { topic, error }
+    }
+}
+
+#[derive(Message, Clone, Debug)]
+#[rtype(result = "()")]
+pub struct MqttMessage {
+    pub topic: String,
+    pub payload: String,
+}
+
+impl From<Publish> for MqttMessage {
+    fn from(publish_event: Publish) -> Self {
+        let topic = String::from_utf8_lossy(&publish_event.topic).to_string();
+        let payload = String::from_utf8_lossy(&publish_event.payload).to_string();
+        MqttMessage { topic, payload }
+    }
+}
+
+impl Handler<Subscribe> for MqttActor {
+    type Result = ResponseActFuture<Self, Result<SubscribeSuccess, SubscribeError>>;
+
+    fn handle(&mut self, msg: Subscribe, ctx: &mut Self::Context) -> Self::Result {
+        let original_msg = msg.clone();
+        let mqtt_client = self.mqtt_client.clone();
+        Box::pin(
+            async move {
+                mqtt_client
+                    .unwrap()
+                    .subscribe(msg.topic, QoS::AtLeastOnce)
+                    .await
+            }
+            .into_actor(self)
+            .map(|res, act, _ctx| match res {
+                Ok(_) => {
+                    act.listeners.insert(msg.recipient);
+                    Ok(SubscribeSuccess::new(original_msg.topic))
+                }
+                Err(err) => Err(SubscribeError::new(original_msg.topic, err)),
+            }),
+        )
     }
 }
