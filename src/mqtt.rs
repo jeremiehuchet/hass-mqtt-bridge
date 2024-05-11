@@ -15,6 +15,7 @@ use rumqttc::v5::{
     },
     AsyncClient, ClientError, ConnectionError, Event, MqttOptions,
 };
+use serde::Serialize;
 use serde_json::Value;
 use url::Url;
 
@@ -143,8 +144,11 @@ pub struct PublishEntityData {
 }
 
 impl PublishEntityData {
-    pub fn new(topic: String, payload: Value) -> Self {
-        PublishEntityData { topic, payload }
+    pub fn new<S: Serialize>(topic: String, payload: S) -> Self {
+        PublishEntityData {
+            topic,
+            payload: serde_json::to_value(payload).unwrap_or_default(),
+        }
     }
 }
 
@@ -243,4 +247,9 @@ impl Handler<Subscribe> for MqttActor {
             }),
         )
     }
+}
+
+pub trait HaMqttEntity<T> {
+    fn list_entities(self) -> Vec<Entity>;
+    fn build_payloads(&self, data: T) -> Vec<PublishEntityData>;
 }

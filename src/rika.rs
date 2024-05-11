@@ -1,11 +1,15 @@
 use crate::{
     misc::{app_infos, Sluggable},
-    mqtt::{EntityConfiguration, MqttActor, MqttMessage, PublishEntityData, Subscribe},
+    mqtt::{
+        EntityConfiguration, HaMqttEntity, MqttActor, MqttMessage, PublishEntityData, Subscribe,
+    },
 };
 use actix::prelude::*;
 use anyhow::anyhow;
 use async_stream::stream;
+use backoff::{future::retry_notify, ExponentialBackoff};
 use chrono::Duration;
+use derive_new::new;
 use hass_mqtt_autodiscovery::{
     mqtt::{
         climate::Climate,
@@ -24,12 +28,12 @@ use hass_mqtt_autodiscovery::{
 };
 use indoc::indoc;
 use lazy_static::lazy_static;
-use log::{debug, error, info, trace};
+use log::{debug, error, info, trace, warn};
 use rika_firenet_client::model::StatusDetail;
 use rika_firenet_client::HasDetailledStatus;
 use rika_firenet_client::{RikaFirenetClient, StoveStatus};
 use rust_decimal_macros::dec;
-use std::{collections::HashMap, fmt::Display, ops::Deref};
+use std::{collections::HashMap, fmt::Display, ops::Deref, vec};
 
 lazy_static! {
     static ref RIKA_DISCOVERY_INTERVAL: Duration = Duration::days(7);
@@ -54,26 +58,33 @@ impl RikaActor {
         }
     }
 
-    fn start_stove_discovery(act: &mut RikaActor, ctx: &mut Context<Self>) {
+    fn execute_stove_discovery(act: &mut RikaActor, ctx: &mut Context<Self>) {
+        let known_stove_ids: Vec<String> = act.stoves.keys().map(String::to_string).collect();
         let client = act.rika_client.clone();
         ctx.add_stream(stream! {
-            match client.list_stoves().await {
+            let backoff = ExponentialBackoff::default();
+            let list_stoves =  || async {
+                Ok(client.list_stoves().await?)
+            };
+            let on_error = |e, next|{
+                warn!("Will retry stove discovery in {next:?} because it failed: {e}'");
+            };
+            match retry_notify(backoff, list_stoves, on_error).await {
                 Ok(stove_ids) => {
-                    for stove_id in stove_ids {
-                        match client.status(stove_id.as_str()).await {
-                            Ok(status) => {
-                                yield status;
-                            },
-                            Err(error) => error!("error fetching stove id={stove_id} status: {error}"),
-                        }
+                    let new_stoves = stove_ids.into_iter().filter(|id| !known_stove_ids.contains(id));
+                    for stove_id in new_stoves {
+                        info!("Discovered stove id={stove_id}");
+                        yield StoveDiscovered::new(stove_id)
                     }
                 },
-                Err(error) => error!("error listing stoves: {error:?}"),
+                Err(error) => {
+                    error!("Giving up on stove discovery: {error}");
+                },
             }
         });
     }
 
-    fn start_stove_scraper(act: &mut RikaActor, ctx: &mut Context<Self>) {
+    fn execute_stove_scraper(act: &mut RikaActor, ctx: &mut Context<Self>) {
         let known_stove_ids: Vec<String> = act.stoves.keys().map(String::clone).collect();
         let client = act.rika_client.clone();
         ctx.add_stream(stream! {
@@ -82,7 +93,7 @@ impl RikaActor {
                     Ok(status) => {
                         yield status;
                     },
-                    Err(error) => error!("error fetching stove id={stove_id} status: {error}"),
+                    Err(error) => error!("Error fetching stove id={stove_id} status: {error}"),
                 }
             }
         });
@@ -128,44 +139,56 @@ impl Actor for RikaActor {
 
         info!("Scheduling stoves discovery every {discovery_interval}");
         let discovery_interval = discovery_interval.to_std().expect("A valid std::Duration");
-        ctx.run_later(std::time::Duration::ZERO, Self::start_stove_discovery);
-        ctx.run_interval(discovery_interval, Self::start_stove_discovery);
+        ctx.run_later(std::time::Duration::ZERO, Self::execute_stove_discovery);
+        ctx.run_interval(discovery_interval, Self::execute_stove_discovery);
 
         let status_interval = RIKA_STATUS_INTERVAL.deref();
         info!("Scheduling stove data update every {status_interval}");
         let status_interval = status_interval.to_std().expect("A valid std::Duration");
-        ctx.run_interval(status_interval, Self::start_stove_scraper);
+        ctx.run_interval(status_interval, Self::execute_stove_scraper);
+    }
+}
+
+#[derive(new)]
+struct StoveDiscovered {
+    id: String,
+}
+
+impl StreamHandler<StoveDiscovered> for RikaActor {
+    fn handle(&mut self, stove: StoveDiscovered, ctx: &mut Self::Context) {
+        let stove_id = stove.id;
+        info!("Found stove id {stove_id}");
+        let client = self.rika_client.clone();
+        ctx.add_stream(stream! {
+            match client.status(&stove_id).await {
+                Ok(stove_status) => yield stove_status,
+                Err(error) => error!("Error fetching stove id={stove_id} status: {error}"),
+            };
+        });
+    }
+
+    fn finished(&mut self, _ctx: &mut Self::Context) {
+        // override default behavior to keep the actor running
     }
 }
 
 impl StreamHandler<StoveStatus> for RikaActor {
-    fn handle(&mut self, stove_status: StoveStatus, _ctx: &mut Self::Context) {
+    fn handle(&mut self, stove_status: StoveStatus, ctx: &mut Self::Context) {
         let stove_id = stove_status.stove_id.clone();
         let new_entities = RikaEntities::from(&stove_status);
         let old_entities = self.stoves.insert(stove_id, new_entities.clone());
 
-        let state_topic = new_entities.state_topic.clone();
+        debug!("Publishing status data {stove_status:?}");
+        for data_payload in new_entities.build_payloads(stove_status) {
+            self.mqtt_addr.do_send(data_payload);
+        }
 
         if Some(&new_entities) != old_entities.as_ref() {
-            debug!("Publishing configuration for {new_entities}");
-            let entities: Vec<Entity> = new_entities.into();
-            for entity in entities {
+            debug!("Publishing configurations for {new_entities}");
+            for entity in new_entities.list_entities() {
                 self.mqtt_addr.do_send(EntityConfiguration(entity));
             }
         }
-
-        debug!("Publishing data");
-
-        let original_payload = serde_json::to_value(&stove_status).unwrap_or_default();
-        let mut enriched_payload = original_payload.as_object().unwrap().clone();
-        let status_details = &stove_status.get_status_details();
-        enriched_payload.insert(
-            "status".to_string(),
-            status_detail_to_str(status_details).into(),
-        );
-
-        self.mqtt_addr
-            .do_send(PublishEntityData::new(state_topic, enriched_payload.into()));
     }
 
     fn finished(&mut self, _ctx: &mut Self::Context) {
@@ -217,7 +240,7 @@ impl Handler<MqttMessage> for RikaActor {
                         .await;
                 }
                 .into_actor(self)
-                .map(|_, act, ctx|   Self::start_stove_scraper(act, ctx)
+                .map(|_, act, ctx|   Self::execute_stove_scraper(act, ctx)
                 )
                 .spawn(ctx);
             }
@@ -226,30 +249,11 @@ impl Handler<MqttMessage> for RikaActor {
     }
 }
 
-fn status_detail_to_str(status: &StatusDetail) -> &str {
-    match status {
-        StatusDetail::Bake => "Bake",
-        StatusDetail::Burnout => "Burnout",
-        StatusDetail::Cleaning => "Cleaning",
-        StatusDetail::Control => "Control",
-        StatusDetail::DeepCleaning => "Deep Cleaning",
-        StatusDetail::ExternalRequest => "External Request",
-        StatusDetail::FrostProtection => "Frost Protection",
-        StatusDetail::Heat => "Heat",
-        StatusDetail::Ignition => "Ignition",
-        StatusDetail::Off => "Off",
-        StatusDetail::Standby => "Standby",
-        StatusDetail::Startup => "Startup",
-        StatusDetail::Unknown => "Unknown",
-        StatusDetail::Wood => "Wook",
-        StatusDetail::WoodPresenceControl => "Wood Presence Control",
-    }
-}
-
 #[derive(PartialEq, Clone)]
 struct RikaEntities {
     display_name: String,
-    state_topic: String,
+    topic_prefix: String,
+
     status_sensor: Sensor,
     room_temperature_sensor: Sensor,
     flame_temperature_sensor: Sensor,
@@ -280,35 +284,43 @@ impl Display for RikaEntities {
     }
 }
 
-impl Into<Vec<Entity>> for RikaEntities {
-    fn into(self) -> Vec<Entity> {
-        let mut entities = Vec::new();
+impl HaMqttEntity<StoveStatus> for RikaEntities {
+    fn list_entities(self) -> Vec<Entity> {
+        let mut entities = vec![
+            self.status_sensor.into(),
+            self.room_temperature_sensor.into(),
+            self.flame_temperature_sensor.into(),
+            self.bake_temperature_sensor.into(),
+            self.wifi_strength_sensor.into(),
+            self.pellet_consumption_sensor.into(),
+            self.runtime_sensor.into(),
+            self.ignition_sensor.into(),
+            self.onoff_cycles_sensor.into(),
+            self.climate.into(),
+            self.onoff_button.into(),
+            self.mode_select.into(),
+            self.target_temperature_number.into(),
+            self.idle_temperature_number.into(),
+            self.power_heating_number.into(),
+            self.daily_schedules_switch.into(),
+            self.frost_protection_swith.into(),
+            self.frost_protection_temperature.into(),
+        ];
         for error_count in self.parameter_error_count {
             entities.push(error_count.into());
         }
-        entities.push(self.status_sensor.into());
-        entities.push(self.room_temperature_sensor.into());
-        entities.push(self.flame_temperature_sensor.into());
-        entities.push(self.bake_temperature_sensor.into());
-        entities.push(self.wifi_strength_sensor.into());
-        entities.push(self.pellet_consumption_sensor.into());
-        entities.push(self.runtime_sensor.into());
-        entities.push(self.ignition_sensor.into());
-        entities.push(self.onoff_cycles_sensor.into());
-        entities.push(self.climate.into());
-
-        entities.push(self.onoff_button.into());
-        entities.push(self.mode_select.into());
-        entities.push(self.target_temperature_number.into());
-        entities.push(self.idle_temperature_number.into());
-        entities.push(self.power_heating_number.into());
-
-        entities.push(self.daily_schedules_switch.into());
-
-        entities.push(self.frost_protection_swith.into());
-        entities.push(self.frost_protection_temperature.into());
-
         return entities;
+    }
+
+    fn build_payloads(&self, data: StoveStatus) -> Vec<PublishEntityData> {
+        let topic_prefix = &self.topic_prefix;
+        vec![
+            PublishEntityData::new(
+                format!("{topic_prefix}/status-detail"),
+                data.get_status_details(),
+            ),
+            PublishEntityData::new(format!("{topic_prefix}/state"), data),
+        ]
     }
 }
 
@@ -328,7 +340,6 @@ impl From<&StoveStatus> for RikaEntities {
         let (version_major, version_minor) = version.split_at(1);
 
         let topic_prefix = &format!("{COMMON_BASE_TOPIC}/{unique_id}");
-        let state_topic = "~/state";
 
         let origin = app_infos::origin();
 
@@ -349,20 +360,21 @@ impl From<&StoveStatus> for RikaEntities {
 
         let sensor_defaults = Sensor::default()
             .topic_prefix(topic_prefix)
-            .state_topic(state_topic)
+            .state_topic("~/state")
             .origin(origin.clone())
             .device(device.clone())
             .availability(availability.clone());
 
         RikaEntities {
             display_name: format!("{name} (id={id})"),
-            state_topic: format!("{topic_prefix}/state"),
+            topic_prefix: topic_prefix.to_string(),
             status_sensor: sensor_defaults
                 .clone()
                 .name("Status")
                 .unique_id(format!("{unique_id}-st"))
                 .object_id(format!("{object_id}_status"))
-                .value_template("{{ value_json.status }}")
+                .state_topic("~/status-detail")
+                .value_template("{{ value_json }}")
                 .device_class(SensorDeviceClass::Enum),
             room_temperature_sensor: sensor_defaults
                 .clone()
@@ -465,10 +477,11 @@ impl From<&StoveStatus> for RikaEntities {
                 .device(device.clone())
                 .availability(availability.clone())
                 .optimistic(false)
+                .action_topic("~/status-detail")
                 .action_template(indoc! {"
-                    {%- if value_json.status in ['Ignition', 'Startup', 'Control', 'Cleaning', 'Burnout'] -%}
+                    {%- if value_json in ['Ignition', 'Startup', 'Control', 'Cleaning', 'Burnout'] -%}
                         heating
-                    {%- elif value_json.status == 'Standby' -%}
+                    {%- elif value_json == 'Standby' -%}
                         idle
                     {%- else -%}
                         off
@@ -692,7 +705,7 @@ impl From<&StoveStatus> for RikaEntities {
                         {%- endif -%}
                     "}),
                 frost_protection_temperature: Number::default()
-                    .name("Idle temperature")
+                    .name("Frost protection temperature")
                     .object_id(format!("{object_id}_frost_protection_temperature"))
                     .unique_id(format!("{unique_id}_frost_protection_temperature"))
                     .icon("mdi:snowflake-thermometer")
