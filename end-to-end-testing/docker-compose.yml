@@ -14,7 +14,7 @@ services:
       - "./docker-compose/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro"
       - "./docker-compose/mosquitto/passwd:/mosquitto/config/passwd:ro"
     ports:
-      - 1883:1883
+      - 1883
 
   mosquitto-debug:
     image: eclipse-mosquitto:2.0
@@ -32,14 +32,14 @@ services:
     build:
       context: https://github.com/jeremiehuchet/rika-firenet-api-rs.git#:mock
     ports:
-      - 3000:3000
+      - 3000
     stop_signal: SIGKILL
 
   somfy-protect-mock:
     build:
       context: https://github.com/jeremiehuchet/somfy-protect-api-rs.git#:mock
     ports:
-      - 3001:3000
+      - 3000
     stop_signal: SIGKILL
 
   hass-mqtt-bridge:

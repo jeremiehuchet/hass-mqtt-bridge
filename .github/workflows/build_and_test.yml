@@ -53,9 +53,9 @@ jobs:
       - name: Install Playwright and dependencies
         working-directory: end-to-end-testing
         run: |
-          npm install -g pnpm
-          pnpm install
-          pnpx playwright install --with-deps firefox
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+          pnpm playwright install --with-deps firefox
 
       - name: Run Playwright tests
         working-directory: end-to-end-testing
