@@ -5,7 +5,7 @@ use crate::{
     },
 };
 use actix::prelude::*;
-use anyhow::anyhow;
+use anyhow::bail;
 use async_stream::stream;
 use backoff::{future::retry_notify, ExponentialBackoff};
 use chrono::Duration;
@@ -29,9 +29,10 @@ use hass_mqtt_autodiscovery::{
 use indoc::indoc;
 use lazy_static::lazy_static;
 use log::{debug, error, info, trace, warn};
-use rika_firenet_client::model::StatusDetail;
-use rika_firenet_client::HasDetailledStatus;
+use regex::Regex;
+use rika_firenet_client::{HasDetailledStatus, StoveControls};
 use rika_firenet_client::{RikaFirenetClient, StoveStatus};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::{collections::HashMap, fmt::Display, ops::Deref, vec};
 
@@ -39,6 +40,7 @@ lazy_static! {
     static ref RIKA_DISCOVERY_INTERVAL: Duration = Duration::days(7);
     static ref RIKA_STATUS_INTERVAL: Duration = Duration::seconds(10);
     static ref RIKA_SENSOR_EXPIRATION_TIME: Duration = Duration::minutes(2);
+    static ref DEDUPLICATE_COMMANDS_GRACE_TIME: Duration = Duration::seconds(5);
 }
 
 const COMMON_BASE_TOPIC: &str = "rika-firenet";
@@ -47,6 +49,7 @@ pub struct RikaActor {
     mqtt_addr: Addr<MqttActor>,
     rika_client: RikaFirenetClient,
     stoves: HashMap<String, RikaEntities>,
+    pending_commands: Vec<RikaFirenetCommand>,
 }
 
 impl RikaActor {
@@ -55,6 +58,7 @@ impl RikaActor {
             mqtt_addr,
             rika_client,
             stoves: HashMap::new(),
+            pending_commands: Vec::new(),
         }
     }
 
@@ -117,6 +121,69 @@ impl RikaActor {
         .into_actor(act)
         .spawn(ctx);
     }
+
+    fn execute_pending_commands(
+        &mut self,
+        ctx: &mut Context<Self>,
+        known_commands: Vec<RikaFirenetCommand>,
+        topic_prefix: String,
+    ) {
+        let known_commands_for_given_stove: Vec<RikaFirenetCommand> = known_commands
+            .iter()
+            .filter(|c| c.topic_prefix == topic_prefix)
+            .map(|c| c.clone())
+            .collect();
+
+        let latest_pending_commands_for_given_stove: Vec<RikaFirenetCommand> = self
+            .pending_commands
+            .iter()
+            .filter(|c| c.topic_prefix == topic_prefix)
+            .map(|c| c.clone())
+            .collect();
+
+        if known_commands_for_given_stove == latest_pending_commands_for_given_stove {
+            self.pending_commands
+                .retain(|c| c.topic_prefix != topic_prefix);
+            let stove_id = self
+                .stoves
+                .iter()
+                .find(|(_id, status)| status.topic_prefix == topic_prefix)
+                .map(|(id, _status)| id.clone());
+            if let Some(stove_id) = stove_id {
+                info!(
+                    "Executing commands for stove id={stove_id}:\n{}",
+                    known_commands_for_given_stove
+                        .iter()
+                        .map(|c| format!("- {:?}", c.attribute))
+                        .collect::<Vec<String>>()
+                        .join("\n")
+                );
+                let client = self.rika_client.clone();
+                async move {
+                    let mut controls = *client.status(&stove_id).await?.controls;
+                    for command in known_commands_for_given_stove {
+                        command.apply_to(&mut controls);
+                    }
+                    client.restore_controls(&stove_id, controls).await?;
+                    client.status(&stove_id).await
+                }
+                .into_actor(self)
+                .map(move |res, _act, ctx| {
+                    match res {
+                        Ok(status) => {
+                            ctx.add_stream(stream! {
+                                yield status
+                            });
+                        }
+                        Err(err) => {
+                            error!("Stove controls update failed: {err}");
+                        }
+                    };
+                })
+                .spawn(ctx);
+            }
+        }
+    }
 }
 
 impl Actor for RikaActor {
@@ -178,13 +245,13 @@ impl StreamHandler<StoveStatus> for RikaActor {
         let new_entities = RikaEntities::from(&stove_status);
         let old_entities = self.stoves.insert(stove_id, new_entities.clone());
 
-        debug!("Publishing status data {stove_status:?}");
+        trace!("Publishing status data {stove_status:?}");
         for data_payload in new_entities.build_payloads(stove_status) {
             self.mqtt_addr.do_send(data_payload);
         }
 
         if Some(&new_entities) != old_entities.as_ref() {
-            debug!("Publishing configurations for {new_entities}");
+            trace!("Publishing configurations for {new_entities}");
             for entity in new_entities.list_entities() {
                 self.mqtt_addr.do_send(EntityConfiguration(entity));
             }
@@ -200,51 +267,18 @@ impl Handler<MqttMessage> for RikaActor {
     type Result = ();
 
     fn handle(&mut self, msg: MqttMessage, ctx: &mut Self::Context) -> Self::Result {
-        let mut topic_parts = msg.topic.splitn(4, '/');
-        let root = topic_parts.next();
-        let stove_id = topic_parts
-            .next()
-            .and_then(|id| id.split("-").last())
-            .map(|s| s.to_string());
-        let attribute = topic_parts
-            .next()
-            .map(|attr| match ControlAttribute::try_from(attr) {
-                Ok(attr) => Ok(attr),
-                Err(err) => {
-                    error!("can't parse control attr: {err}");
-                    Err(err)
-                }
-            });
-        let command = topic_parts.next();
-        match (root, stove_id, command, attribute) {
-            (Some(COMMON_BASE_TOPIC), Some(stove_id), Some("set"), Some(Ok(attribute))) => {
-                let stove_id = stove_id;
-                let attribute = attribute;
-                let value = msg.payload.to_string();
-                let rika_client = self.rika_client.clone();
-                async move {
-                    info!("Executing set({attribute}, {value})");
-                    let mut controls = rika_client.status(&stove_id).await.unwrap().controls;
-                    match attribute {
-                        ControlAttribute::OnOff => controls.on_off = value.parse().ok(),
-                        ControlAttribute::OperatingMode => controls.operating_mode = value.parse().ok(),
-                        ControlAttribute::TargetTemperature => controls.target_temperature = Some(value),
-                        ControlAttribute::IdleTemperature => controls.set_back_temperature = Some(value),
-                        ControlAttribute::PowerHeating => controls.heating_power = value.parse().ok(),
-                        ControlAttribute::DailySchedulesEnabled => controls.heating_times_active_for_comfort = value.parse().ok(),
-                        ControlAttribute::FrostProtectionEnabled => controls.frost_protection_active = value.parse().ok(),
-                        ControlAttribute::FrostProtectionTemperature => controls.frost_protection_temperature = value.parse().ok(),
-                    };
-                    let _ = rika_client
-                        .restore_controls(&stove_id, controls.as_ref().clone())
-                        .await;
-                }
-                .into_actor(self)
-                .map(|_, act, ctx|   Self::execute_stove_scraper(act, ctx)
-                )
-                .spawn(ctx);
+        match RikaFirenetCommand::try_from(msg) {
+            Ok(command) => {
+                self.pending_commands.push(command.clone());
+                let deduplicate_grace_time = DEDUPLICATE_COMMANDS_GRACE_TIME
+                    .to_std()
+                    .expect("A valid std::Duration");
+                let all_commands = self.pending_commands.clone();
+                ctx.run_later(deduplicate_grace_time, move |act, ctx| {
+                    act.execute_pending_commands(ctx, all_commands, command.topic_prefix)
+                });
             }
-            (root, stove_id, command, attribute) => trace!("ignore message on topic {}: prefix={root:?}, stove_id={stove_id:?}, command={command:?}, attribute={attribute:?}", msg.topic),
+            Err(err) => debug!("Unsupported command: {err}"),
         }
     }
 }
@@ -725,48 +759,77 @@ impl From<&StoveStatus> for RikaEntities {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 enum ControlAttribute {
-    OnOff,
-    OperatingMode,
-    TargetTemperature,
-    IdleTemperature,
-    PowerHeating,
-    DailySchedulesEnabled,
-    FrostProtectionEnabled,
-    FrostProtectionTemperature,
+    OnOff(bool),
+    OperatingMode(i32),
+    TargetTemperature(Decimal),
+    IdleTemperature(Decimal),
+    PowerHeating(i32),
+    DailySchedulesEnabled(bool),
+    FrostProtectionEnabled(bool),
+    FrostProtectionTemperature(Decimal),
 }
 
-impl TryFrom<&str> for ControlAttribute {
-    type Error = anyhow::Error;
+#[derive(Debug, new, Clone, PartialEq)]
+struct RikaFirenetCommand {
+    topic_prefix: String,
+    attribute: ControlAttribute,
+}
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "power-on" => Ok(Self::OnOff),
-            "operating-mode" => Ok(Self::OperatingMode),
-            "target-temp" => Ok(Self::TargetTemperature),
-            "idle-temp" => Ok(Self::IdleTemperature),
-            "power-heating" => Ok(Self::PowerHeating),
-            "schedule-enable" => Ok(Self::DailySchedulesEnabled),
-            "frost-protection-enable" => Ok(Self::FrostProtectionEnabled),
-            "frost-protection-temp" => Ok(Self::FrostProtectionTemperature),
-            _ => Err(anyhow!("unsupported value: {value}")),
-        }
+impl RikaFirenetCommand {
+    fn apply_to(&self, controls: &mut StoveControls) {
+        match self.attribute {
+            ControlAttribute::OnOff(enabled) => controls.on_off = Some(enabled),
+            ControlAttribute::OperatingMode(mode) => controls.operating_mode = Some(mode),
+            ControlAttribute::TargetTemperature(temp) => {
+                controls.target_temperature = Some(temp.to_string())
+            }
+            ControlAttribute::IdleTemperature(temp) => {
+                controls.set_back_temperature = Some(temp.to_string())
+            }
+            ControlAttribute::PowerHeating(percent) => controls.heating_power = Some(percent),
+            ControlAttribute::DailySchedulesEnabled(enabled) => {
+                controls.heating_times_active_for_comfort = Some(enabled)
+            }
+            ControlAttribute::FrostProtectionEnabled(enabled) => {
+                controls.frost_protection_active = Some(enabled)
+            }
+            ControlAttribute::FrostProtectionTemperature(temp) => {
+                controls.frost_protection_temperature = Some(temp.to_string())
+            }
+        };
     }
 }
 
-impl Display for ControlAttribute {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let attribute_name = match self {
-            ControlAttribute::OnOff => "power-on",
-            ControlAttribute::OperatingMode => "operating-mode",
-            ControlAttribute::TargetTemperature => "target-temp",
-            ControlAttribute::IdleTemperature => "idle-temp",
-            ControlAttribute::PowerHeating => "power-heating",
-            ControlAttribute::DailySchedulesEnabled => "schedule-enable",
-            ControlAttribute::FrostProtectionEnabled => "frost-protection-enable",
-            ControlAttribute::FrostProtectionTemperature => "frost-protection-temp",
-        };
-        write!(f, "{attribute_name}")
+impl TryFrom<MqttMessage> for RikaFirenetCommand {
+    type Error = anyhow::Error;
+
+    fn try_from(msg: MqttMessage) -> Result<Self, Self::Error> {
+        let command_topic_re = Regex::new(&format!("^({COMMON_BASE_TOPIC}/[^/]+)/([^/]+)/set$"))
+            .expect("A valid regular expression for rika stove command topic");
+        match command_topic_re.captures(&msg.topic).map(|c| c.extract()) {
+            Some((_, [topic_prefix, attribute])) => {
+                let command = match attribute {
+                    "power-on" => ControlAttribute::OnOff(msg.payload.parse()?),
+                    "operating-mode" => ControlAttribute::OperatingMode(msg.payload.parse()?),
+                    "target-temp" => ControlAttribute::TargetTemperature(msg.payload.parse()?),
+                    "idle-temp" => ControlAttribute::IdleTemperature(msg.payload.parse()?),
+                    "power-heating" => ControlAttribute::PowerHeating(msg.payload.parse()?),
+                    "daily-schedules-enable" => {
+                        ControlAttribute::DailySchedulesEnabled(msg.payload.parse()?)
+                    }
+                    "frost-protection-enable" => {
+                        ControlAttribute::FrostProtectionEnabled(msg.payload.parse()?)
+                    }
+                    "frost-protection-temp" => {
+                        ControlAttribute::FrostProtectionTemperature(msg.payload.parse()?)
+                    }
+                    unsupported_attr => bail!("Unsupported attribute: {unsupported_attr}"),
+                };
+                Ok(RikaFirenetCommand::new(topic_prefix.to_string(), command))
+            }
+            None => bail!("Unable to parse command from message: {msg:?}"),
+        }
     }
 }
