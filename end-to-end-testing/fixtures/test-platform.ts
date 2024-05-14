@@ -3,6 +3,7 @@ import {
   StartedDockerComposeEnvironment,
   Wait,
 } from "testcontainers";
+import { StartedGenericContainer } from "testcontainers/build/generic-container/started-generic-container";
 
 const dockerCompose = new DockerComposeEnvironment(".", "docker-compose.yml")
   .withWaitStrategy(
@@ -38,7 +39,7 @@ const dockerCompose = new DockerComposeEnvironment(".", "docker-compose.yml")
 
 export class TestPlatform {
   environment: StartedDockerComposeEnvironment | null;
-  readonly mosquittoMessages: string[] = [];
+  readonly mosquittoMessages: { [key: string]: string } = {};
   readonly registeredEntities: string[] = [];
 
   constructor() {}
@@ -62,7 +63,8 @@ export class TestPlatform {
       .getContainer("mosquitto-debug-1")
       .logs();
     moquittoDebugLogs.on("data", (line: string) => {
-      this.mosquittoMessages.push(line.trim());
+      const [topic, data] = line.trim().split(/ /, 2);
+      this.mosquittoMessages[topic] = data;
     });
     this.environment = env;
   }
@@ -79,7 +81,7 @@ export class TestPlatform {
     return this.registeredEntities.filter((name) => pattern.test(name)).length;
   }
 
-  getMosquittoMessages(): string[] {
-    return [...this.mosquittoMessages];
+  getMosquittoLastMessage(topic: string): string | undefined | any {
+    return this.mosquittoMessages[topic];
   }
 }

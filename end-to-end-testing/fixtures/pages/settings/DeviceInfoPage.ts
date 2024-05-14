@@ -31,6 +31,12 @@ export class DeviceInfoPage {
     await expect(this.extra).toHaveText(extra);
   }
 
+  async hasEntity(name: string, value: string) {
+    await expect(
+      this.entities.filter({ hasText: `${value} ${name}` }),
+    ).toBeVisible({ timeout: 100000 });
+  }
+
   async hasEntities(entities: { [key: string]: string }) {
     const expectedEntities = Object.entries(entities).map(
       ([name, value]) => `${value} ${name}`,
@@ -43,5 +49,9 @@ export class DeviceInfoPage {
       ([name, value]) => `${value} ${name}`,
     );
     await expect(this.diagnostics).toHaveText(expectedDiagnostics);
+  }
+
+  async toggleSwitch(name: string) {
+    await this.page.getByLabel(name).click();
   }
 }

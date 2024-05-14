@@ -28,7 +28,7 @@ test.beforeEach(async ({ onboardingPage, mqttSettingsPage, loginPage }) => {
 });
 
 test.describe("Rika Firenet bridge", () => {
-  test("should create stove devices", async ({ screenshots, devicesPage }) => {
+  test("should create stove devices", async ({ devicesPage }) => {
     await devicesPage.goto();
     await devicesPage.hasDevice("Stove Stove 12345");
     await devicesPage.hasDevice("Stove Stove 333444");
@@ -87,6 +87,15 @@ test.describe("Rika Firenet bridge", () => {
       "Parameter error count 8": "0",
       "Parameter error count 9": "0",
       "Wifi strength": "-47 dBm",
+    });
+  });
+
+  test.describe("controls", () => {
+    test("can turn stove off", async ({ devicesPage, deviceInfoPage }) => {
+      await devicesPage.goto();
+      await devicesPage.gotoDevice("Stove Stove 12345");
+      await deviceInfoPage.toggleSwitch("Power");
+      await deviceInfoPage.hasEntity("Status", "Off");
     });
   });
 });
