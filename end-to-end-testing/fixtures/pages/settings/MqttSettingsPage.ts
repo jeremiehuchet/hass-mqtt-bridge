@@ -58,12 +58,15 @@ export class MqttSettingsPage {
 
       await this.finishButton.click();
       await expect
-        .poll(() => testPlatform.getMosquittoMessages(), {
-          message:
-            "homeassistant should have sent an 'online' message to MQTT broker",
-          timeout: 10000,
-        })
-        .toContain("homeassistant/status online");
+        .poll(
+          () => testPlatform.getMosquittoLastMessage("homeassistant/status"),
+          {
+            message:
+              "homeassistant should have sent an 'online' message to MQTT broker",
+            timeout: 10000,
+          },
+        )
+        .toBe("online");
     }
   }
 }
