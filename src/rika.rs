@@ -5,9 +5,10 @@ use crate::{
     },
 };
 use actix::prelude::*;
-use anyhow::bail;
+use actix_web::rt::time;
+use anyhow::{bail, Result};
 use async_stream::stream;
-use backoff::{future::retry_notify, ExponentialBackoff};
+use backoff::{future::retry_notify, ExponentialBackoff, ExponentialBackoffBuilder};
 use chrono::Duration;
 use derive_new::new;
 use hass_mqtt_autodiscovery::{
@@ -34,77 +35,47 @@ use rika_firenet_client::{HasDetailledStatus, StoveControls};
 use rika_firenet_client::{RikaFirenetClient, StoveStatus};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::{collections::HashMap, fmt::Display, ops::Deref, vec};
+use std::{fmt::Display, ops::Deref, vec};
 
 lazy_static! {
     static ref RIKA_DISCOVERY_INTERVAL: Duration = Duration::days(7);
     static ref RIKA_STATUS_INTERVAL: Duration = Duration::seconds(10);
     static ref RIKA_SENSOR_EXPIRATION_TIME: Duration = Duration::minutes(2);
     static ref DEDUPLICATE_COMMANDS_GRACE_TIME: Duration = Duration::seconds(5);
+    static ref BACKOFF_POLICY: ExponentialBackoff = ExponentialBackoffBuilder::new()
+        .with_max_elapsed_time(Some(
+            Duration::hours(24)
+                .to_std()
+                .expect("A valid max elapsed time as std::Duration")
+        ))
+        .build();
 }
 
 const COMMON_BASE_TOPIC: &str = "rika-firenet";
 
-pub struct RikaActor {
+pub struct StoveDiscoveryActor {
     mqtt_addr: Addr<MqttActor>,
     rika_client: RikaFirenetClient,
-    stoves: HashMap<String, RikaEntities>,
-    pending_commands: Vec<RikaFirenetCommand>,
+    stoves: Vec<RunningStoveActor>,
 }
 
-impl RikaActor {
+#[derive(new)]
+struct RunningStoveActor {
+    topic_prefix: String,
+    addr: Addr<StoveActor>,
+}
+
+impl StoveDiscoveryActor {
     pub fn new(mqtt_addr: Addr<MqttActor>, rika_client: RikaFirenetClient) -> Self {
-        RikaActor {
+        StoveDiscoveryActor {
             mqtt_addr,
             rika_client,
-            stoves: HashMap::new(),
-            pending_commands: Vec::new(),
+            stoves: Vec::new(),
         }
     }
 
-    fn execute_stove_discovery(act: &mut RikaActor, ctx: &mut Context<Self>) {
-        let known_stove_ids: Vec<String> = act.stoves.keys().map(String::to_string).collect();
-        let client = act.rika_client.clone();
-        ctx.add_stream(stream! {
-            let backoff = ExponentialBackoff::default();
-            let list_stoves =  || async {
-                Ok(client.list_stoves().await?)
-            };
-            let on_error = |e, next|{
-                warn!("Will retry stove discovery in {next:?} because it failed: {e}'");
-            };
-            match retry_notify(backoff, list_stoves, on_error).await {
-                Ok(stove_ids) => {
-                    let new_stoves = stove_ids.into_iter().filter(|id| !known_stove_ids.contains(id));
-                    for stove_id in new_stoves {
-                        info!("Discovered stove id={stove_id}");
-                        yield StoveDiscovered::new(stove_id)
-                    }
-                },
-                Err(error) => {
-                    error!("Giving up on stove discovery: {error}");
-                },
-            }
-        });
-    }
-
-    fn execute_stove_scraper(act: &mut RikaActor, ctx: &mut Context<Self>) {
-        let known_stove_ids: Vec<String> = act.stoves.keys().map(String::clone).collect();
-        let client = act.rika_client.clone();
-        ctx.add_stream(stream! {
-            for stove_id in known_stove_ids {
-                match client.status(stove_id.as_str()).await {
-                    Ok(status) => {
-                        yield status;
-                    },
-                    Err(error) => error!("Error fetching stove id={stove_id} status: {error}"),
-                }
-            }
-        });
-    }
-
     fn handle_topics_subscription_result(
-        act: &mut RikaActor,
+        act: &mut StoveDiscoveryActor,
         ctx: &mut Context<Self>,
         topics_subscription_result: Request<MqttActor, Subscribe>,
     ) {
@@ -121,58 +92,217 @@ impl RikaActor {
         .into_actor(act)
         .spawn(ctx);
     }
+}
 
-    fn execute_pending_commands(
-        &mut self,
-        ctx: &mut Context<Self>,
-        known_commands: Vec<RikaFirenetCommand>,
-        topic_prefix: String,
-    ) {
-        let known_commands_for_given_stove: Vec<RikaFirenetCommand> = known_commands
-            .iter()
-            .filter(|c| c.topic_prefix == topic_prefix)
-            .map(|c| c.clone())
-            .collect();
+impl Actor for StoveDiscoveryActor {
+    type Context = Context<Self>;
 
-        let latest_pending_commands_for_given_stove: Vec<RikaFirenetCommand> = self
-            .pending_commands
-            .iter()
-            .filter(|c| c.topic_prefix == topic_prefix)
-            .map(|c| c.clone())
-            .collect();
+    fn started(&mut self, ctx: &mut Self::Context) {
+        // subscribe to all changes related to topics managed by this actor
+        let topics_subscription_result = self.mqtt_addr.send(Subscribe::new(
+            format!("{COMMON_BASE_TOPIC}/+/+/set"),
+            ctx.address().recipient(),
+        ));
+        ctx.run_later(
+            std::time::Duration::ZERO,
+            |act: &mut StoveDiscoveryActor, ctx: &mut Context<Self>| {
+                Self::handle_topics_subscription_result(act, ctx, topics_subscription_result)
+            },
+        );
 
-        if known_commands_for_given_stove == latest_pending_commands_for_given_stove {
-            self.pending_commands
-                .retain(|c| c.topic_prefix != topic_prefix);
-            let stove_id = self
-                .stoves
-                .iter()
-                .find(|(_id, status)| status.topic_prefix == topic_prefix)
-                .map(|(id, _status)| id.clone());
-            if let Some(stove_id) = stove_id {
+        let discovery_interval = RIKA_DISCOVERY_INTERVAL.deref();
+        info!("Scheduling stoves discovery every {discovery_interval}");
+        let discovery_interval = discovery_interval.to_std().expect("A valid std::Duration");
+        let client = self.rika_client.clone();
+        ctx.add_stream(stream! {
+            let list_stoves = || async {
+                 Ok(client.list_stoves().await?)
+            };
+            let on_error = |e, next|{
+                warn!("Will retry discovering stoves in {next:?} because it failed: {e}'");
+            };
+            loop {
+                match retry_notify(BACKOFF_POLICY.clone(), list_stoves, on_error).await {
+                    Ok(stove_ids) => {
+                        for stove_id in stove_ids {
+                            yield StoveDiscovered::new(stove_id);
+                        }
+                        time::sleep(discovery_interval).await;
+                    }
+                    Err(error) => error!("Unable to list stoves: {error}"),
+                }
+            }
+        });
+    }
+}
+
+#[derive(new)]
+struct StoveDiscovered {
+    id: String,
+}
+
+impl StreamHandler<StoveDiscovered> for StoveDiscoveryActor {
+    fn handle(&mut self, stove: StoveDiscovered, ctx: &mut Self::Context) {
+        let stove_id = stove.id.clone();
+        info!("Found stove id {stove_id}");
+        let mqtt_addr = self.mqtt_addr.clone();
+        let client = self.rika_client.clone();
+        async move { StoveActor::new(mqtt_addr, client, stove_id).await }
+            .into_actor(self)
+            .map(move |stove_actor, act, _ctx| {
+                match stove_actor {
+                    Ok(stove_actor) => {
+                        let topic_prefix = stove_actor.topic_prefix.clone();
+                        let addr = stove_actor.start();
+                        act.stoves.push(RunningStoveActor::new(topic_prefix, addr));
+                    }
+                    Err(error) => {
+                        error!("Can't initialize actor for stove id={}: {error}", stove.id)
+                    }
+                };
+            })
+            .spawn(ctx);
+    }
+}
+
+impl Handler<MqttMessage> for StoveDiscoveryActor {
+    type Result = ();
+
+    fn handle(&mut self, msg: MqttMessage, _ctx: &mut Self::Context) -> Self::Result {
+        match RikaFirenetCommand::try_from(msg) {
+            Ok(RikaFirenetCommand {
+                topic_prefix,
+                command,
+            }) => {
+                let stove_actor = self.stoves.iter().find(|s| s.topic_prefix == topic_prefix);
+                match stove_actor {
+                    Some(stove_actor) => stove_actor.addr.do_send(command),
+                    None => warn!(
+                        "No actor found for a stove identified by topic prefix {topic_prefix}"
+                    ),
+                }
+            }
+            Err(error) => debug!("Unsupported command: {error}"),
+        }
+    }
+}
+
+struct StoveActor {
+    mqtt_addr: Addr<MqttActor>,
+    rika_firenet_client: RikaFirenetClient,
+    topic_prefix: String,
+    last_status: StoveStatus,
+    pending_commands: Vec<StoveCommand>,
+}
+
+impl StoveActor {
+    async fn new(
+        mqtt_addr: Addr<MqttActor>,
+        rika_firenet_client: RikaFirenetClient,
+        stove_id: String,
+    ) -> Result<Self> {
+        let last_status = rika_firenet_client.status(stove_id).await?;
+        let StoveMetadata { topic_prefix, .. } = (&last_status).into();
+        Ok(StoveActor {
+            mqtt_addr,
+            rika_firenet_client,
+            topic_prefix,
+            last_status,
+            pending_commands: Vec::new(),
+        })
+    }
+}
+
+impl Actor for StoveActor {
+    type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        let stove_id = self.last_status.stove_id.clone();
+        let client = self.rika_firenet_client.clone();
+
+        let status_interval = RIKA_STATUS_INTERVAL.deref();
+        info!("Scheduling stove id {stove_id} data update every {status_interval}");
+        let status_interval = status_interval.to_std().expect("A valid std::Duration");
+
+        for entity in RikaEntities::from(&self.last_status).list_entities() {
+            self.mqtt_addr.do_send(EntityConfiguration(entity));
+        }
+
+        ctx.add_stream(stream! {
+            let fetch_stove_status = || async {
+                 Ok(client.status(&stove_id).await?)
+            };
+            let on_error = |e, next|{
+                warn!("Will retry stove status id={stove_id} in {next:?} because it failed: {e}'");
+            };
+            loop {
+                match retry_notify(BACKOFF_POLICY.clone(), fetch_stove_status, on_error).await {
+                    Ok(status) => {
+                        yield status;
+                        time::sleep(status_interval).await;
+                    }
+                    Err(error) => error!("Unable to fetch status for stove id={stove_id}: {error}"),
+                }
+            }
+        });
+    }
+}
+
+impl StreamHandler<StoveStatus> for StoveActor {
+    fn handle(&mut self, stove_status: StoveStatus, _ctx: &mut Self::Context) {
+        let stove_id = stove_status.stove_id.clone();
+        let old_entities = RikaEntities::from(&self.last_status);
+        let new_entities = RikaEntities::from(&stove_status);
+
+        trace!("Publishing status data for stove id={stove_id}: {stove_status:?}");
+        for data_payload in new_entities.build_payloads(stove_status) {
+            self.mqtt_addr.do_send(data_payload);
+        }
+
+        if new_entities != old_entities {
+            trace!("Publishing configurations for stove id={stove_id}:\n{new_entities}");
+            for entity in new_entities.list_entities() {
+                self.mqtt_addr.do_send(EntityConfiguration(entity));
+            }
+        }
+    }
+}
+
+impl Handler<StoveCommand> for StoveActor {
+    type Result = ();
+
+    fn handle(&mut self, cmd: StoveCommand, ctx: &mut Self::Context) -> Self::Result {
+        self.pending_commands.push(cmd);
+        let grace_period = DEDUPLICATE_COMMANDS_GRACE_TIME
+            .to_std()
+            .expect("A valid grace period as std::Duration");
+        let pending_commands_before_grace_period = self.pending_commands.clone();
+        ctx.run_later(grace_period, move |act, ctx| {
+            let client = act.rika_firenet_client.clone();
+            if pending_commands_before_grace_period == act.pending_commands {
+                let stove_id = act.last_status.stove_id.clone();
                 info!(
                     "Executing commands for stove id={stove_id}:\n{}",
-                    known_commands_for_given_stove
+                    pending_commands_before_grace_period
                         .iter()
-                        .map(|c| format!("- {:?}", c.attribute))
+                        .map(|c| format!("- {:?}", c))
                         .collect::<Vec<String>>()
                         .join("\n")
                 );
-                let client = self.rika_client.clone();
                 async move {
                     let mut controls = *client.status(&stove_id).await?.controls;
-                    for command in known_commands_for_given_stove {
+                    for command in pending_commands_before_grace_period {
                         command.apply_to(&mut controls);
                     }
                     client.restore_controls(&stove_id, controls).await?;
                     client.status(&stove_id).await
                 }
-                .into_actor(self)
+                .into_actor(act)
                 .map(move |res, _act, ctx| {
                     match res {
                         Ok(status) => {
                             ctx.add_stream(stream! {
-                                yield status
+                                yield status;
                             });
                         }
                         Err(err) => {
@@ -182,103 +312,43 @@ impl RikaActor {
                 })
                 .spawn(ctx);
             }
-        }
-    }
-}
-
-impl Actor for RikaActor {
-    type Context = Context<Self>;
-
-    fn started(&mut self, ctx: &mut Self::Context) {
-        let discovery_interval = RIKA_DISCOVERY_INTERVAL.deref();
-
-        // subscribe to all changes related to topics managed by this actor
-        let topics_subscription_result = self.mqtt_addr.send(Subscribe::new(
-            format!("{COMMON_BASE_TOPIC}/+/+/set"),
-            ctx.address().recipient(),
-        ));
-        ctx.run_later(
-            std::time::Duration::ZERO,
-            |act: &mut RikaActor, ctx: &mut Context<Self>| {
-                Self::handle_topics_subscription_result(act, ctx, topics_subscription_result)
-            },
-        );
-
-        info!("Scheduling stoves discovery every {discovery_interval}");
-        let discovery_interval = discovery_interval.to_std().expect("A valid std::Duration");
-        ctx.run_later(std::time::Duration::ZERO, Self::execute_stove_discovery);
-        ctx.run_interval(discovery_interval, Self::execute_stove_discovery);
-
-        let status_interval = RIKA_STATUS_INTERVAL.deref();
-        info!("Scheduling stove data update every {status_interval}");
-        let status_interval = status_interval.to_std().expect("A valid std::Duration");
-        ctx.run_interval(status_interval, Self::execute_stove_scraper);
-    }
-}
-
-#[derive(new)]
-struct StoveDiscovered {
-    id: String,
-}
-
-impl StreamHandler<StoveDiscovered> for RikaActor {
-    fn handle(&mut self, stove: StoveDiscovered, ctx: &mut Self::Context) {
-        let stove_id = stove.id;
-        info!("Found stove id {stove_id}");
-        let client = self.rika_client.clone();
-        ctx.add_stream(stream! {
-            match client.status(&stove_id).await {
-                Ok(stove_status) => yield stove_status,
-                Err(error) => error!("Error fetching stove id={stove_id} status: {error}"),
-            };
         });
     }
-
-    fn finished(&mut self, _ctx: &mut Self::Context) {
-        // override default behavior to keep the actor running
-    }
 }
 
-impl StreamHandler<StoveStatus> for RikaActor {
-    fn handle(&mut self, stove_status: StoveStatus, ctx: &mut Self::Context) {
-        let stove_id = stove_status.stove_id.clone();
-        let new_entities = RikaEntities::from(&stove_status);
-        let old_entities = self.stoves.insert(stove_id, new_entities.clone());
-
-        trace!("Publishing status data {stove_status:?}");
-        for data_payload in new_entities.build_payloads(stove_status) {
-            self.mqtt_addr.do_send(data_payload);
-        }
-
-        if Some(&new_entities) != old_entities.as_ref() {
-            trace!("Publishing configurations for {new_entities}");
-            for entity in new_entities.list_entities() {
-                self.mqtt_addr.do_send(EntityConfiguration(entity));
-            }
-        }
-    }
-
-    fn finished(&mut self, _ctx: &mut Self::Context) {
-        // override default behavior to keep the actor running
-    }
+struct StoveMetadata {
+    manufacturer: String,
+    model: String,
+    name: String,
+    id: String,
+    unique_id: String,
+    object_id: String,
+    version: String,
+    topic_prefix: String,
 }
 
-impl Handler<MqttMessage> for RikaActor {
-    type Result = ();
+impl From<&StoveStatus> for StoveMetadata {
+    fn from(value: &StoveStatus) -> Self {
+        let manufacturer = value.oem.clone();
+        let model = value.stove_type.clone();
+        let name = value.name.clone();
+        let id = value.stove_id.clone();
+        let unique_id = format!("{manufacturer}_{model}_{name}-{id}").slug();
+        let object_id = format!("{manufacturer}_{model}_{name}").slug();
 
-    fn handle(&mut self, msg: MqttMessage, ctx: &mut Self::Context) -> Self::Result {
-        match RikaFirenetCommand::try_from(msg) {
-            Ok(command) => {
-                self.pending_commands.push(command.clone());
-                let deduplicate_grace_time = DEDUPLICATE_COMMANDS_GRACE_TIME
-                    .to_std()
-                    .expect("A valid std::Duration");
-                let all_commands = self.pending_commands.clone();
-                ctx.run_later(deduplicate_grace_time, move |act, ctx| {
-                    act.execute_pending_commands(ctx, all_commands, command.topic_prefix)
-                });
-            }
-            Err(err) => debug!("Unsupported command: {err}"),
+        let version = value.sensors.parameter_version_main_board.to_string();
+        let (version_major, version_minor) = version.split_at(1);
+
+        let topic_prefix = format!("{COMMON_BASE_TOPIC}/{unique_id}");
+        StoveMetadata {
+            manufacturer,
+            model,
+            name,
+            id,
+            unique_id,
+            object_id,
+            version: format!("{version_major}.{version_minor}"),
+            topic_prefix,
         }
     }
 }
@@ -360,20 +430,16 @@ impl HaMqttEntity<StoveStatus> for RikaEntities {
 
 impl From<&StoveStatus> for RikaEntities {
     fn from(stove_status: &StoveStatus) -> RikaEntities {
-        let manufacturer = &stove_status.oem;
-        let model = &stove_status.stove_type;
-        let name = &stove_status.name;
-        let id = &stove_status.stove_id;
-        let unique_id = &format!("{manufacturer}_{model}_{name}-{id}").slug();
-        let object_id = &format!("{manufacturer}_{model}_{name}").slug();
-
-        let version = stove_status
-            .sensors
-            .parameter_version_main_board
-            .to_string();
-        let (version_major, version_minor) = version.split_at(1);
-
-        let topic_prefix = &format!("{COMMON_BASE_TOPIC}/{unique_id}");
+        let StoveMetadata {
+            manufacturer,
+            model,
+            name,
+            id,
+            unique_id,
+            object_id,
+            version,
+            topic_prefix,
+        } = &stove_status.into();
 
         let origin = app_infos::origin();
 
@@ -383,7 +449,7 @@ impl From<&StoveStatus> for RikaEntities {
             .configuration_url(format!("https://www.rika-firenet.com/web/stove/{id}"))
             .manufacturer(manufacturer)
             .model(model)
-            .sw_version(format!("{version_major}.{version_minor}"));
+            .sw_version(version);
 
         let availability = Availability::single(
             AvailabilityCheck::topic("~/state")
@@ -401,7 +467,7 @@ impl From<&StoveStatus> for RikaEntities {
 
         RikaEntities {
             display_name: format!("{name} (id={id})"),
-            topic_prefix: topic_prefix.to_string(),
+            topic_prefix: topic_prefix.clone(),
             status_sensor: sensor_defaults
                 .clone()
                 .name("Status")
@@ -759,8 +825,9 @@ impl From<&StoveStatus> for RikaEntities {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum ControlAttribute {
+#[derive(Message, Debug, Clone, PartialEq)]
+#[rtype(result = "()")]
+enum StoveCommand {
     OnOff(bool),
     OperatingMode(i32),
     TargetTemperature(Decimal),
@@ -771,35 +838,35 @@ enum ControlAttribute {
     FrostProtectionTemperature(Decimal),
 }
 
-#[derive(Debug, new, Clone, PartialEq)]
-struct RikaFirenetCommand {
-    topic_prefix: String,
-    attribute: ControlAttribute,
-}
-
-impl RikaFirenetCommand {
-    fn apply_to(&self, controls: &mut StoveControls) {
-        match self.attribute {
-            ControlAttribute::OnOff(enabled) => controls.on_off = Some(enabled),
-            ControlAttribute::OperatingMode(mode) => controls.operating_mode = Some(mode),
-            ControlAttribute::TargetTemperature(temp) => {
+impl StoveCommand {
+    fn apply_to(self, controls: &mut StoveControls) {
+        match self {
+            StoveCommand::OnOff(enabled) => controls.on_off = Some(enabled),
+            StoveCommand::OperatingMode(mode) => controls.operating_mode = Some(mode),
+            StoveCommand::TargetTemperature(temp) => {
                 controls.target_temperature = Some(temp.to_string())
             }
-            ControlAttribute::IdleTemperature(temp) => {
+            StoveCommand::IdleTemperature(temp) => {
                 controls.set_back_temperature = Some(temp.to_string())
             }
-            ControlAttribute::PowerHeating(percent) => controls.heating_power = Some(percent),
-            ControlAttribute::DailySchedulesEnabled(enabled) => {
+            StoveCommand::PowerHeating(percent) => controls.heating_power = Some(percent),
+            StoveCommand::DailySchedulesEnabled(enabled) => {
                 controls.heating_times_active_for_comfort = Some(enabled)
             }
-            ControlAttribute::FrostProtectionEnabled(enabled) => {
+            StoveCommand::FrostProtectionEnabled(enabled) => {
                 controls.frost_protection_active = Some(enabled)
             }
-            ControlAttribute::FrostProtectionTemperature(temp) => {
+            StoveCommand::FrostProtectionTemperature(temp) => {
                 controls.frost_protection_temperature = Some(temp.to_string())
             }
         };
     }
+}
+
+#[derive(Debug, new, Clone, PartialEq)]
+struct RikaFirenetCommand {
+    topic_prefix: String,
+    command: StoveCommand,
 }
 
 impl TryFrom<MqttMessage> for RikaFirenetCommand {
@@ -811,19 +878,19 @@ impl TryFrom<MqttMessage> for RikaFirenetCommand {
         match command_topic_re.captures(&msg.topic).map(|c| c.extract()) {
             Some((_, [topic_prefix, attribute])) => {
                 let command = match attribute {
-                    "power-on" => ControlAttribute::OnOff(msg.payload.parse()?),
-                    "operating-mode" => ControlAttribute::OperatingMode(msg.payload.parse()?),
-                    "target-temp" => ControlAttribute::TargetTemperature(msg.payload.parse()?),
-                    "idle-temp" => ControlAttribute::IdleTemperature(msg.payload.parse()?),
-                    "power-heating" => ControlAttribute::PowerHeating(msg.payload.parse()?),
+                    "power-on" => StoveCommand::OnOff(msg.payload.parse()?),
+                    "operating-mode" => StoveCommand::OperatingMode(msg.payload.parse()?),
+                    "target-temp" => StoveCommand::TargetTemperature(msg.payload.parse()?),
+                    "idle-temp" => StoveCommand::IdleTemperature(msg.payload.parse()?),
+                    "power-heating" => StoveCommand::PowerHeating(msg.payload.parse()?),
                     "daily-schedules-enable" => {
-                        ControlAttribute::DailySchedulesEnabled(msg.payload.parse()?)
+                        StoveCommand::DailySchedulesEnabled(msg.payload.parse()?)
                     }
                     "frost-protection-enable" => {
-                        ControlAttribute::FrostProtectionEnabled(msg.payload.parse()?)
+                        StoveCommand::FrostProtectionEnabled(msg.payload.parse()?)
                     }
                     "frost-protection-temp" => {
-                        ControlAttribute::FrostProtectionTemperature(msg.payload.parse()?)
+                        StoveCommand::FrostProtectionTemperature(msg.payload.parse()?)
                     }
                     unsupported_attr => bail!("Unsupported attribute: {unsupported_attr}"),
                 };

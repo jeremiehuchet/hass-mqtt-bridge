@@ -6,7 +6,7 @@ use log::{debug, error, info};
 use misc::app_infos;
 use misc::SuffixStrip;
 use mqtt::MqttActor;
-use rika::RikaActor;
+use rika::StoveDiscoveryActor;
 use rika_firenet_client::RikaFirenetClientBuilder;
 use somfy_protect::SomfyActor;
 use somfy_protect_client::client::SomfyProtectClientBuilder;
@@ -108,7 +108,7 @@ async fn main() -> Result<()> {
             if let Some(base_url) = cli.rika_baseurl {
                 client_builder = client_builder.base_url(base_url.strip_repeated_suffix("/"));
             }
-            let rika = RikaActor::new(mqtt_addr.clone(), client_builder.build());
+            let rika = StoveDiscoveryActor::new(mqtt_addr.clone(), client_builder.build());
             rika.start();
         }
         (_, _) => debug!("No configuration for Rika Firenet"),
