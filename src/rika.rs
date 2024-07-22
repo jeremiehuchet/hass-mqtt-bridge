@@ -41,7 +41,7 @@ lazy_static! {
     static ref RIKA_DISCOVERY_INTERVAL: Duration = Duration::days(7);
     static ref RIKA_STATUS_INTERVAL: Duration = Duration::seconds(10);
     static ref RIKA_SENSOR_EXPIRATION_TIME: Duration = Duration::minutes(2);
-    static ref DEDUPLICATE_COMMANDS_GRACE_TIME: Duration = Duration::seconds(5);
+    static ref DEDUPLICATE_COMMANDS_GRACE_TIME: Duration = Duration::seconds(2);
     static ref BACKOFF_POLICY: ExponentialBackoff = ExponentialBackoffBuilder::new()
         .with_max_elapsed_time(Some(
             Duration::hours(24)
