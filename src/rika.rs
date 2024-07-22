@@ -11,7 +11,7 @@ use async_stream::stream;
 use backoff::{future::retry_notify, ExponentialBackoff, ExponentialBackoffBuilder};
 use chrono::Duration;
 use derive_new::new;
-use hass_mqtt_autodiscovery::{
+use ha_mqtt_discovery::{
     mqtt::{
         climate::Climate,
         common::{

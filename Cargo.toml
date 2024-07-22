@@ -14,7 +14,7 @@ clap = { version = "<4.5", features = ["derive", "cargo", "env"] }
 derive-new = "0.6"
 env_logger = "0.10"
 futures = "0.3"
-hass-mqtt-autodiscovery = { git = "https://github.com/jeremiehuchet/ha-mqtt-discovery-rs.git" }
+ha-mqtt-discovery = { git = "https://github.com/jeremiehuchet/ha-mqtt-discovery-rs.git" }
 hostname = "0.3"
 indoc = "2.0"
 lazy_static = "1.0"

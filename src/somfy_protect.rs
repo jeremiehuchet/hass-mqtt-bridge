@@ -5,7 +5,7 @@ use crate::{
 use actix::prelude::*;
 use async_stream::stream;
 use chrono::Duration as ChronoDuration;
-use hass_mqtt_autodiscovery::{
+use ha_mqtt_discovery::{
     mqtt::{
         binary_sensor::BinarySensor,
         common::{
@@ -23,7 +23,7 @@ use log::{error, info, warn};
 use serde_json::Value;
 use somfy_protect_client::{
     client::SomfyProtectClient,
-    models::{device_definition::RHashType, DeviceOutput, SiteOutput},
+    models::{device_definition::Type, DeviceOutput, SiteOutput},
 };
 use std::{collections::HashMap, fmt::Display, ops::Deref, time::Duration, vec};
 
@@ -182,7 +182,7 @@ impl AlarmSite {
     }
 
     fn add_device(&mut self, somfy_device: DeviceOutput) {
-        if somfy_device.device_definition.r#type == RHashType::Box {
+        if somfy_device.device_definition.r#type == Type::Box {
             self.box_device_id = Some(somfy_device.device_id.clone());
             for alarm_device in self.devices.values_mut() {
                 alarm_device.via_device = self.box_device_id.clone();

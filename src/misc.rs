@@ -3,7 +3,7 @@ use unicode_normalization::UnicodeNormalization;
 use url::Url;
 
 pub(crate) mod app_infos {
-    use hass_mqtt_autodiscovery::mqtt::common::Origin;
+    use ha_mqtt_discovery::mqtt::common::Origin;
     use package_info::PackageInfo;
     use package_info_derive::PackageInfo;
 

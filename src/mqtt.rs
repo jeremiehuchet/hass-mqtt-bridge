@@ -6,15 +6,15 @@ use std::{
 use actix::prelude::*;
 use anyhow::{anyhow, Error};
 use async_stream::stream;
-use hass_mqtt_autodiscovery::{Entity, HomeAssistantMqtt};
-use log::{debug, error, info, trace};
-use rumqttc::v5::{
+use ha_mqtt_discovery::v5::{
     mqttbytes::{
         v5::{ConnAck, Packet, Publish},
         QoS,
     },
     AsyncClient, ClientError, ConnectionError, Event, MqttOptions,
 };
+use ha_mqtt_discovery::{Entity, HomeAssistantMqtt};
+use log::{debug, error, info, trace};
 use serde::Serialize;
 use serde_json::Value;
 use url::Url;
