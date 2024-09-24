@@ -38,7 +38,7 @@ jobs:
 
       - name: Build test stack
         working-directory: end-to-end-testing
-        run: docker-compose build
+        run: docker compose build
 
       - uses: actions/setup-node@v4
         with:
