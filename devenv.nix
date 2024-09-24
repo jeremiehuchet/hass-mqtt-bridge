@@ -1,10 +1,12 @@
 { inputs,  pkgs, ... }:
 
 {
-  packages = [
-    pkgs.docker-compose
-    pkgs.openssl
-    pkgs.vscode
+  packages = with pkgs; [
+    docker
+    openssl
+    vscode
+
+    playwright-driver.browsers
   ];
 
   languages.rust = {
@@ -22,5 +24,10 @@
     cd $DEVENV_ROOT/end-to-end-testing
     pnpm install
     pnpm test
+  '';
+
+  enterShell = ''
+    export PLAYWRIGHT_BROWSERS_PATH=${pkgs.playwright-driver.browsers}
+    export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
   '';
 }
