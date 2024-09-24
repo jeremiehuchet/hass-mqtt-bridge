@@ -27,6 +27,9 @@ export default defineConfig({
       name: "firefox",
       use: {
         ...devices["Desktop Firefox"],
+        launchOptions: {
+          executablePath: `${process.env.PLAYWRIGHT_BROWSERS_PATH}/firefox-1463/firefox/firefox`,
+        },
       },
     },
   ],
