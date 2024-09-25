@@ -11,9 +11,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 6
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v26
-      - uses: cachix/cachix-action@v14
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+      - uses: cachix/install-nix-action@8887e596b4ee1134dae06b98d573bd674693f47c # v26
+      - uses: cachix/cachix-action@18cf96c7c98e048e10a83abd92116114cd8504be # v14
         with:
           name: devenv
       - name: Install devenv.sh
@@ -22,7 +22,7 @@ jobs:
       - name: Build the devenv shell and run any pre-commit hooks
         run: devenv ci
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84 # v2
 
       - name: Cargo test
         run: devenv shell cargo test
@@ -34,9 +34,9 @@ jobs:
       checks: write
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v26
-      - uses: cachix/cachix-action@v14
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4
+      - uses: cachix/install-nix-action@8887e596b4ee1134dae06b98d573bd674693f47c # v26
+      - uses: cachix/cachix-action@18cf96c7c98e048e10a83abd92116114cd8504be # v14
         with:
           name: devenv
       - name: Install devenv.sh
@@ -49,7 +49,7 @@ jobs:
           docker compose pull
 
       - name: Cache node modules
-        uses: actions/cache@v4
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9 # v4
         with:
           path: end-to-end-testing/node_modules
           key: ${{ runner.os }}-nodemodules-${{ hashFiles('end-to-end-testing/pnpm-lock.yaml') }}
@@ -58,7 +58,7 @@ jobs:
         run: devenv shell end-to-end-tests
 
       - name: Archive Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@50769540e7f4bd5e21e526ee35c689e35e0d6874 # v4
         if: ${{ !cancelled() }}
         with:
           name: playwright-report
@@ -66,7 +66,7 @@ jobs:
           retention-days: 30
 
       - name: Publish Test Results
-        uses: mikepenz/action-junit-report@v4
+        uses: mikepenz/action-junit-report@db71d41eb79864e25ab0337e395c352e84523afe # v4
         if: ${{ !cancelled() }}
         with:
           report_paths: end-to-end-testing/playwright-report/results.xml

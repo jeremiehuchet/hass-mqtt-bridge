@@ -1,6 +1,6 @@
 services:
   homeassistant:
-    image: homeassistant/home-assistant:2024.9.3
+    image: homeassistant/home-assistant:2024.9.3@sha256:1ad29727bdfe3f6422c231f3eb269a90eabb289ed00583ca423547b039a2c24f
     volumes:
       - ./docker-compose/hass/configuration.yaml:/config/configuration.yaml
       - /etc/localtime:/etc/localtime:ro
@@ -8,7 +8,7 @@ services:
       - 8123:8123
 
   mosquitto:
-    image: eclipse-mosquitto:2.0
+    image: eclipse-mosquitto:2.0@sha256:d12c8f80dfc65b768bb9acecc7ef182b976f71fb681640b66358e5e0cf94e9e9
     volumes:
       - "./docker-compose/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"
       - "./docker-compose/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro"
@@ -17,7 +17,7 @@ services:
       - 1883
 
   mosquitto-debug:
-    image: eclipse-mosquitto:2.0
+    image: eclipse-mosquitto:2.0@sha256:d12c8f80dfc65b768bb9acecc7ef182b976f71fb681640b66358e5e0cf94e9e9
     entrypoint: mosquitto_sub
     command:
       - --id
