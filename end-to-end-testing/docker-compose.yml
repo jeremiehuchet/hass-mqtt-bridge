@@ -1,6 +1,6 @@
 services:
   homeassistant:
-    image: homeassistant/home-assistant:2024.4
+    image: homeassistant/home-assistant:2024.9.3
     volumes:
       - ./docker-compose/hass/configuration.yaml:/config/configuration.yaml
       - /etc/localtime:/etc/localtime:ro

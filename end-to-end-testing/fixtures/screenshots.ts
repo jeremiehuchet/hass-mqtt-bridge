@@ -14,4 +14,11 @@ export class ScreenshotsFixture {
       fullPage: true,
     });
   }
+
+  async element(locator: string, name: string) {
+    await this.page.waitForLoadState("networkidle");
+    await this.page
+      .locator(locator)
+      .screenshot({ path: `screenshots/${name}.png` });
+  }
 }

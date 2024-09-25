@@ -27,7 +27,25 @@ test.beforeEach(async ({ onboardingPage, mqttSettingsPage, loginPage }) => {
     .toBeGreaterThan(10);
 });
 
-test.describe("Rika Firenet bridge", () => {
+test("take screenshots for documentation", async ({
+  page,
+  homePage,
+  devicesPage,
+  deviceInfoPage,
+}) => {
+  await homePage.goto();
+  await homePage.takeThermostatScreenshot(
+    "Stove Stove 12345 Controller",
+    "rika-firenet-thermostat",
+  );
+
+  await devicesPage.goto();
+  await devicesPage.gotoDevice("Stove Stove 12345");
+  await page.setViewportSize({ width: 1280, height: 1280 });
+  await deviceInfoPage.takeScreenshot("rika-firenet-device-info");
+});
+
+test.describe("entities", () => {
   test("should create stove devices", async ({ devicesPage }) => {
     await devicesPage.goto();
     await devicesPage.hasDevice("Stove Stove 12345");
@@ -35,14 +53,12 @@ test.describe("Rika Firenet bridge", () => {
   });
 
   test("should push device details", async ({
-    screenshots,
     devicesPage,
     deviceInfoPage,
   }) => {
     await devicesPage.goto();
     await devicesPage.gotoDevice("Stove Stove 12345");
     await deviceInfoPage.hasInfo("RIKA", "DOMO", "Firmware: 2.28");
-    await screenshots.fullPage("rika-device-page");
   });
 
   test("should push sensor values", async ({ devicesPage, deviceInfoPage }) => {
@@ -89,13 +105,13 @@ test.describe("Rika Firenet bridge", () => {
       "Wifi strength": "-47 dBm",
     });
   });
+});
 
-  test.describe("controls", () => {
-    test("can turn stove off", async ({ devicesPage, deviceInfoPage }) => {
-      await devicesPage.goto();
-      await devicesPage.gotoDevice("Stove Stove 12345");
-      await deviceInfoPage.toggleSwitch("Power");
-      await deviceInfoPage.hasEntity("Status", "Off");
-    });
+test.describe("controls", () => {
+  test("can turn stove off", async ({ devicesPage, deviceInfoPage }) => {
+    await devicesPage.goto();
+    await devicesPage.gotoDevice("Stove Stove 12345");
+    await deviceInfoPage.toggleSwitch("Power");
+    await deviceInfoPage.hasEntity("Status", "Off");
   });
 });

@@ -25,6 +25,10 @@ export class DeviceInfoPage {
     );
   }
 
+  async takeScreenshot(screenshotName: string) {
+    this.page.screenshot({ path: `screenshots/${screenshotName}.png` });
+  }
+
   async hasInfo(manufacturer: string, model: string, extra: string) {
     await expect(this.manufacturer).toHaveText(`by ${manufacturer}`);
     await expect(this.model).toHaveText(model);

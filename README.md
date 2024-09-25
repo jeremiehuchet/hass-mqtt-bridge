@@ -4,4 +4,10 @@ A bridge between online services and MQTT with Home Assistant auto-discovery.
 
 ## Rika Firenet
 
-![Rika stoves devices](end-to-end-testing/screenshots/rika-device-page.png)
+Device info page example:
+
+![Rika stove device info page example](end-to-end-testing/screenshots/rika-firenet-device-info.png)
+
+The bridge exposes a thermostat:
+
+![Thermostat card example](end-to-end-testing/screenshots/rika-firenet-thermostat.png)
