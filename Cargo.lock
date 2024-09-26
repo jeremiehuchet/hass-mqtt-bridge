@@ -1197,7 +1197,7 @@ version = "0.1.0"
 source = "git+https://github.com/jeremiehuchet/ha-mqtt-discovery-rs.git#f0c1c9dd68c2f30a5fb8eda2e02c266af92ed27b"
 dependencies = [
  "anyhow",
- "rumqttc 0.24.0",
+ "rumqttc",
  "rust_decimal",
  "serde",
  "serde_derive",
@@ -1242,7 +1242,7 @@ dependencies = [
  "package_info_derive",
  "regex",
  "rika-firenet-client",
- "rumqttc 0.23.0",
+ "rumqttc",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -2452,24 +2452,6 @@ dependencies = [
 
 [[package]]
 name = "rumqttc"
-version = "0.23.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d8941c6791801b667d52bfe9ff4fc7c968d4f3f9ae8ae7abdaaa1c966feafc8"
-dependencies = [
- "bytes",
- "flume",
- "futures-util",
- "log",
- "rustls-native-certs 0.6.3",
- "rustls-pemfile 1.0.4",
- "rustls-webpki 0.101.7",
- "thiserror",
- "tokio",
- "tokio-rustls 0.24.1",
-]
-
-[[package]]
-name = "rumqttc"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1568e15fab2d546f940ed3a21f48bbbd1c494c90c99c4481339364a497f94a9"
@@ -2478,7 +2460,7 @@ dependencies = [
  "flume",
  "futures-util",
  "log",
- "rustls-native-certs 0.7.3",
+ "rustls-native-certs",
  "rustls-pemfile 2.1.3",
  "rustls-webpki 0.102.8",
  "thiserror",
@@ -2577,18 +2559,6 @@ dependencies = [
  "rustls-webpki 0.102.8",
  "subtle",
  "zeroize",
-]
-
-[[package]]
-name = "rustls-native-certs"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9aace74cb666635c918e9c12bc0d348266037aa8eb599b5cba565709a8dff00"
-dependencies = [
- "openssl-probe",
- "rustls-pemfile 1.0.4",
- "schannel",
- "security-framework",
 ]
 
 [[package]]
