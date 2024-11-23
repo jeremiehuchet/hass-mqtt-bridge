@@ -12,8 +12,8 @@ importers:
         specifier: 1.49.0
         version: 1.49.0
       '@types/node':
-        specifier: 20.17.6
-        version: 20.17.6
+        specifier: 20.17.7
+        version: 20.17.7
       testcontainers:
         specifier: 10.15.0
         version: 10.15.0
@@ -49,8 +49,8 @@ packages:
   '@types/node@18.19.31':
     resolution: {integrity: sha512-ArgCD39YpyyrtFKIqMDvjz79jto5fcI/SVUs2HwB+f0dAzq68yqOdyaSivLiLugSziTpNXLQrVb7RZFmdZzbhA==}
 
-  '@types/node@20.17.6':
-    resolution: {integrity: sha512-VEI7OdvK2wP7XHnsuXbAJnEpEkF6NjSN45QJlL4VGqZSXsnicpesdTWsg9RISeSdYd3yeRj/y3k5KGjUXYnFwQ==}
+  '@types/node@20.17.7':
+    resolution: {integrity: sha512-sZXXnpBFMKbao30dUAvzKbdwA2JM1fwUtVEq/kxKuPI5mMwZiRElCpTXb0Biq/LMEVpXDZL5G5V0RPnxKeyaYg==}
 
   '@types/ssh2-streams@0.1.12':
     resolution: {integrity: sha512-Sy8tpEmCce4Tq0oSOYdfqaBpA3hDM8SoxoFh5vzFsu2oL+znzGz8oVWW7xb4K920yYMUY+PIG31qZnFMfPWNCg==}
@@ -519,30 +519,30 @@ snapshots:
 
   '@types/docker-modem@3.0.6':
     dependencies:
-      '@types/node': 20.17.6
+      '@types/node': 20.17.7
       '@types/ssh2': 1.15.0
 
   '@types/dockerode@3.3.31':
     dependencies:
       '@types/docker-modem': 3.0.6
-      '@types/node': 20.17.6
+      '@types/node': 20.17.7
       '@types/ssh2': 1.15.0
 
   '@types/node@18.19.31':
     dependencies:
       undici-types: 5.26.5
 
-  '@types/node@20.17.6':
+  '@types/node@20.17.7':
     dependencies:
       undici-types: 6.19.8
 
   '@types/ssh2-streams@0.1.12':
     dependencies:
-      '@types/node': 20.17.6
+      '@types/node': 20.17.7
 
   '@types/ssh2@0.5.52':
     dependencies:
-      '@types/node': 20.17.6
+      '@types/node': 20.17.7
       '@types/ssh2-streams': 0.1.12
 
   '@types/ssh2@1.15.0':
