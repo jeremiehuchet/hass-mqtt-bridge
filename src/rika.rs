@@ -51,7 +51,7 @@ pub struct StoveDiscoveryActorConfiguration {
     pub stove_discovery_repeat_interval: RangeInclusive<Duration>,
     pub stove_discovery_backoff_ceil: Duration,
     pub stove_status_repeat_interval: RangeInclusive<Duration>,
-    pub stove_status_exponential_backoff_ceil: Duration,
+    pub stove_status_backoff_ceil: Duration,
 }
 
 pub struct StoveDiscoveryActor {
@@ -240,7 +240,7 @@ impl Actor for StoveActor {
             FixedInterval::between(self.config.stove_status_repeat_interval.clone());
         let backoff_policy = ExponentialBackoff::new(
             Duration::from_millis(500),
-            self.config.stove_discovery_backoff_ceil,
+            self.config.stove_status_backoff_ceil,
         );
         info!("Scheduling stove id {stove_id} data update using policy {repeat_policy} and {backoff_policy}");
 

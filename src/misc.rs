@@ -88,36 +88,47 @@ pub trait HumanReadable: Debug {
 
 impl HumanReadable for Duration {
     fn prettify(&self) -> String {
-        if self < &Duration::from_secs(60) {
+        if self.as_secs() < 120 {
             format!("{self:?}")
         } else {
-            TimeDelta::from_std(self.clone()).unwrap().prettify()
+            TimeDelta::from_std(self.clone())
+                .expect(&format!(
+                    "{self:?} to be a TimeDelta convertible to an std::Duration"
+                ))
+                .prettify()
         }
     }
 }
 
 impl HumanReadable for TimeDelta {
     fn prettify(&self) -> String {
-        let seconds = self.num_seconds() % 60;
-        let minutes = self.num_minutes() % 60;
-        let hours = self.num_hours() % 24;
-        let days = self.num_days() % 7;
-        let weeks = self.num_weeks();
+        let seconds_in_min = self.num_seconds() % 60;
+        let minutes_in_hour = self.num_minutes() % 60;
+        let hours_in_day = self.num_hours() % 24;
+        let days = self.num_days();
 
-        if self.num_seconds() < 60 {
+        if self.num_seconds() < 120 {
             self.to_std()
                 .map(|duration| format!("{duration:?}"))
                 .unwrap_or(self.to_string())
+        } else if self.num_minutes() <= 120 {
+            format!(" {}m {seconds_in_min}s", self.num_minutes())
+        } else if self.num_hours() < 72 {
+            format!(
+                " {}h {minutes_in_hour}m {seconds_in_min}s",
+                self.num_hours()
+            )
+        } else if self.num_days() < 72 {
+            format!(" {days}d {hours_in_day}h {minutes_in_hour}m {seconds_in_min}s")
         } else {
-            format!(" {weeks}w {days}d {hours}h {minutes}m {seconds}s")
-                .replace(" 0w", "")
-                .replace(" 0d", "")
-                .replace(" 0h", "")
-                .replace(" 0m", "")
-                .replace(" 0s", "")
-                .trim()
-                .to_string()
+            format!(" {days}d {hours_in_day}h {minutes_in_hour}m {seconds_in_min}s")
         }
+        .replace(" 0d", "")
+        .replace(" 0h", "")
+        .replace(" 0m", "")
+        .replace(" 0s", "")
+        .trim()
+        .to_string()
     }
 }
 
@@ -165,18 +176,37 @@ mod tests {
         );
         assert_eq!(
             TimeDelta::seconds(100000).prettify(),
-            "1d 3h 46m 40s",
-            "should displat d h m s"
+            "27h 46m 40s",
+            "should display d h m s"
         );
         assert_eq!(
             TimeDelta::seconds(89160).prettify(),
-            "1d 46m",
+            "24h 46m",
             "should hide empty units"
         );
         assert_eq!(
             TimeDelta::milliseconds(6141600030).prettify(),
-            "10w 1d 2h",
+            "71d 2h",
             "ms are ignored"
+        );
+        assert_eq!(
+            (TimeDelta::days(120)
+                + TimeDelta::hours(11)
+                + TimeDelta::minutes(25)
+                + TimeDelta::seconds(10))
+            .prettify(),
+            "120d 11h 25m 10s",
+            "days are the highest unit"
+        );
+        assert_eq!(
+            (TimeDelta::hours(71) + TimeDelta::minutes(25) + TimeDelta::seconds(10)).prettify(),
+            "71h 25m 10s",
+            "hours are the highest unit until we reach 72h"
+        );
+        assert_eq!(
+            (TimeDelta::minutes(119) + TimeDelta::seconds(10)).prettify(),
+            "119m 10s",
+            "minutes are the highest unit until we reach 120m"
         );
     }
 }

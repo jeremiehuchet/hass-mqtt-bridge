@@ -47,6 +47,7 @@ services:
       context: ../
       dockerfile: end-to-end-testing/docker-compose/hass-mqtt-bridge/Dockerfile
     environment:
+      RUST_BACKTRACE: full
       RUST_LOG: info,hass_mqtt_bridge=debug
       MQTT_BROKER_URL: mqtt://mosquitto:1883
       MQTT_USERNAME: hass

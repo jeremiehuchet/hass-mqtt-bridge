@@ -58,7 +58,7 @@ struct Cli {
     rika_stove_discovery_backoff_ceil: Duration,
 
     /// Rika stove status update interval
-    #[clap(long, env, value_parser = cli::parse_time_delta_range, default_value = "6d..8d")]
+    #[clap(long, env, value_parser = cli::parse_time_delta_range, default_value = "8m..12m")]
     rika_stove_status_repeat_interval: RangeInclusive<Duration>,
 
     /// Rika stove status update exponential backoff ceil
@@ -120,7 +120,7 @@ impl From<&Cli> for StoveDiscoveryActorConfiguration {
             stove_discovery_repeat_interval: value.rika_stove_discovery_repeat_interval.clone(),
             stove_discovery_backoff_ceil: value.rika_stove_discovery_backoff_ceil,
             stove_status_repeat_interval: value.rika_stove_status_repeat_interval.clone(),
-            stove_status_exponential_backoff_ceil: value.rika_stove_status_backoff_ceil,
+            stove_status_backoff_ceil: value.rika_stove_status_backoff_ceil,
         }
     }
 }

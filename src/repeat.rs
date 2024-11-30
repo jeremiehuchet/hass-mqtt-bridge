@@ -329,8 +329,9 @@ mod tests {
 
 pub mod policy {
     use core::ops::RangeInclusive;
+    use log::{error, warn};
     use rand::Rng;
-    use std::{fmt::Display, time::Duration, u32};
+    use std::{cmp, fmt::Display, time::Duration, u32};
 
     use crate::misc::HumanReadable;
 
@@ -384,7 +385,6 @@ pub mod policy {
 
     #[derive(Clone)]
     pub struct ExponentialBackoff {
-        inner: exponential_backoff::Backoff,
         initial_delay: Duration,
         max_delay: Duration,
         attempts: exponential_backoff::IntoIter,
@@ -398,12 +398,18 @@ pub mod policy {
 
     impl ExponentialBackoff {
         pub fn new(initial_delay: Duration, max_delay: Duration) -> Self {
-            let inner = exponential_backoff::Backoff::new(u32::MAX, initial_delay, max_delay);
+            if initial_delay > max_delay {
+                warn!(
+                    r#"Inconsistent backoff policy configuration: the "max_delay" value ({max_delay:?}) should be higher than the "initial_delay" ({initial_delay:?})"#
+                )
+            }
+            let max_delay = cmp::max(initial_delay, max_delay);
+            let backoff = exponential_backoff::Backoff::new(u32::MAX, initial_delay, max_delay);
+            error!("{backoff:?}");
             ExponentialBackoff {
-                inner: inner.clone(),
                 initial_delay,
                 max_delay,
-                attempts: inner.into_iter(),
+                attempts: backoff.into_iter(),
             }
         }
     }
@@ -425,7 +431,9 @@ pub mod policy {
         }
 
         fn reset(&mut self) {
-            self.attempts = self.inner.clone().into_iter();
+            //let backoff =
+            //    exponential_backoff::Backoff::new(u32::MAX, self.initial_delay, self.max_delay);
+            // self.attempts = backoff.into_iter();
         }
     }
 

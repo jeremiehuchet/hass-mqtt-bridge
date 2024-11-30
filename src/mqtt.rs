@@ -87,9 +87,11 @@ impl Actor for MqttActor {
             let mut backoff_session = backoff.iter();
             loop {
                 match event_loop.poll().await {
-                    Ok(event) => yield event,
+                    Ok(event) => {
+                        backoff_session = backoff.iter();
+                        yield event;},
                     Err(connection_error) => {
-                        let delay = match   backoff_session.next() {
+                        let delay = match backoff_session.next() {
                             Some(Some(delay)) => delay,
                             _ => Duration::from_secs(300),
                         };
