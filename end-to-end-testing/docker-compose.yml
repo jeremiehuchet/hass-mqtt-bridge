@@ -54,6 +54,10 @@ services:
       RIKA_BASEURL: http://rika-firenet-mock:3000
       RIKA_USERNAME: registered-user@rika-firenet.com
       RIKA_PASSWORD: secret
+      RIKA_STOVE_DISCOVERY_REPEAT_INTERVAL: 4s..6s
+      RIKA_STOVE_DISCOVERY_BACKOFF_CEIL: 3s
+      RIKA_STOVE_STATUS_REPEAT_INTERVAL: 1s..2s
+      RIKA_STOVE_STATUS_BACKOFF_CEIL: 5s
       #SOMFY_API_BASEURL: http://somfy-protect-mock:3000/api
       #SOMFY_AUTH_BASEURL: http://somfy-protect-mock:3000/auth
       #SOMFY_CLIENT_ID: somfy

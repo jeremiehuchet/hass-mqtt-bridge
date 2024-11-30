@@ -3,13 +3,15 @@ use crate::{
     mqtt::{
         EntityConfiguration, HaMqttEntity, MqttActor, MqttMessage, PublishEntityData, Subscribe,
     },
+    repeat::{
+        policy::{ExponentialBackoff, FixedInterval},
+        RepeatableExecutor,
+    },
 };
 use actix::prelude::*;
-use actix_web::rt::time;
 use anyhow::{bail, Result};
 use async_stream::stream;
-use backoff::{future::retry_notify, ExponentialBackoff, ExponentialBackoffBuilder};
-use chrono::Duration;
+use chrono::TimeDelta;
 use derive_new::new;
 use ha_mqtt_discovery::{
     mqtt::{
@@ -35,25 +37,25 @@ use rika_firenet_client::{HasDetailledStatus, StoveControls};
 use rika_firenet_client::{RikaFirenetClient, StoveStatus};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::{fmt::Display, ops::Deref, vec};
+use std::{fmt::Display, ops::RangeInclusive, time::Duration, vec};
 
 lazy_static! {
-    static ref RIKA_DISCOVERY_INTERVAL: Duration = Duration::days(7);
-    static ref RIKA_STATUS_INTERVAL: Duration = Duration::seconds(10);
-    static ref RIKA_SENSOR_EXPIRATION_TIME: Duration = Duration::minutes(2);
-    static ref DEDUPLICATE_COMMANDS_GRACE_TIME: Duration = Duration::seconds(2);
-    static ref BACKOFF_POLICY: ExponentialBackoff = ExponentialBackoffBuilder::new()
-        .with_max_elapsed_time(Some(
-            Duration::hours(24)
-                .to_std()
-                .expect("A valid max elapsed time as std::Duration")
-        ))
-        .build();
+    static ref RIKA_SENSOR_EXPIRATION_TIME: TimeDelta = TimeDelta::minutes(2);
+    static ref DEDUPLICATE_COMMANDS_GRACE_TIME: TimeDelta = TimeDelta::seconds(2);
 }
 
 const COMMON_BASE_TOPIC: &str = "rika-firenet";
 
+#[derive(Clone)]
+pub struct StoveDiscoveryActorConfiguration {
+    pub stove_discovery_repeat_interval: RangeInclusive<Duration>,
+    pub stove_discovery_backoff_ceil: Duration,
+    pub stove_status_repeat_interval: RangeInclusive<Duration>,
+    pub stove_status_exponential_backoff_ceil: Duration,
+}
+
 pub struct StoveDiscoveryActor {
+    config: StoveDiscoveryActorConfiguration,
     mqtt_addr: Addr<MqttActor>,
     rika_client: RikaFirenetClient,
     stoves: Vec<RunningStoveActor>,
@@ -66,8 +68,13 @@ struct RunningStoveActor {
 }
 
 impl StoveDiscoveryActor {
-    pub fn new(mqtt_addr: Addr<MqttActor>, rika_client: RikaFirenetClient) -> Self {
+    pub fn new<C: Into<StoveDiscoveryActorConfiguration>>(
+        configuration: C,
+        mqtt_addr: Addr<MqttActor>,
+        rika_client: RikaFirenetClient,
+    ) -> Self {
         StoveDiscoveryActor {
+            config: configuration.into(),
             mqtt_addr,
             rika_client,
             stoves: Vec::new(),
@@ -83,10 +90,10 @@ impl StoveDiscoveryActor {
             match topics_subscription_result.await {
                 Ok(Ok(success)) => info!("Listening for commands on {}", success.topic),
                 Ok(Err(err)) => error!(
-                    "Can't listen for commands on {}, device is read-only: {}",
+                    "Can't listen for commands on {}, device is read-only: {:#}",
                     err.topic, err.error
                 ),
-                Err(err) => error!("Can't subscribe topic: {err}"),
+                Err(err) => error!("Can't subscribe topic: {err:#}"),
             };
         }
         .into_actor(act)
@@ -110,26 +117,31 @@ impl Actor for StoveDiscoveryActor {
             },
         );
 
-        let discovery_interval = RIKA_DISCOVERY_INTERVAL.deref();
-        info!("Scheduling stoves discovery every {discovery_interval}");
-        let discovery_interval = discovery_interval.to_std().expect("A valid std::Duration");
+        let repeat_policy =
+            FixedInterval::between(self.config.stove_discovery_repeat_interval.clone());
+        let backoff_policy = ExponentialBackoff::new(
+            Duration::from_secs(5),
+            self.config.stove_discovery_backoff_ceil,
+        );
+        info!("Scheduling stoves discovery using policy {repeat_policy} and {backoff_policy}");
+
         let client = self.rika_client.clone();
         ctx.add_stream(stream! {
             let list_stoves = || async {
-                 Ok(client.list_stoves().await?)
+                  client.list_stoves().await
             };
-            let on_error = |e, next|{
-                warn!("Will retry discovering stoves in {next:?} because it failed: {e}'");
-            };
+            let mut executor = RepeatableExecutor::new(list_stoves)
+                .with_repeat_policy(repeat_policy)
+                .with_backoff_policy(backoff_policy);
+
             loop {
-                match retry_notify(BACKOFF_POLICY.clone(), list_stoves, on_error).await {
+                match executor.next().await {
                     Ok(stove_ids) => {
                         for stove_id in stove_ids {
                             yield StoveDiscovered::new(stove_id);
                         }
-                        time::sleep(discovery_interval).await;
                     }
-                    Err(error) => error!("Unable to list stoves: {error}"),
+                    Err(execution_failure) => error!("Unable to discover available stoves: {execution_failure}"),
                 }
             }
         });
@@ -145,9 +157,10 @@ impl StreamHandler<StoveDiscovered> for StoveDiscoveryActor {
     fn handle(&mut self, stove: StoveDiscovered, ctx: &mut Self::Context) {
         let stove_id = stove.id.clone();
         info!("Found stove id {stove_id}");
+        let config = self.config.clone();
         let mqtt_addr = self.mqtt_addr.clone();
         let client = self.rika_client.clone();
-        async move { StoveActor::new(mqtt_addr, client, stove_id).await }
+        async move { StoveActor::new(config, mqtt_addr, client, stove_id).await }
             .into_actor(self)
             .map(move |stove_actor, act, _ctx| {
                 match stove_actor {
@@ -188,6 +201,7 @@ impl Handler<MqttMessage> for StoveDiscoveryActor {
 }
 
 struct StoveActor {
+    config: StoveDiscoveryActorConfiguration,
     mqtt_addr: Addr<MqttActor>,
     rika_firenet_client: RikaFirenetClient,
     topic_prefix: String,
@@ -197,6 +211,7 @@ struct StoveActor {
 
 impl StoveActor {
     async fn new(
+        config: StoveDiscoveryActorConfiguration,
         mqtt_addr: Addr<MqttActor>,
         rika_firenet_client: RikaFirenetClient,
         stove_id: String,
@@ -204,6 +219,7 @@ impl StoveActor {
         let last_status = rika_firenet_client.status(stove_id).await?;
         let StoveMetadata { topic_prefix, .. } = (&last_status).into();
         Ok(StoveActor {
+            config,
             mqtt_addr,
             rika_firenet_client,
             topic_prefix,
@@ -220,9 +236,13 @@ impl Actor for StoveActor {
         let stove_id = self.last_status.stove_id.clone();
         let client = self.rika_firenet_client.clone();
 
-        let status_interval = RIKA_STATUS_INTERVAL.deref();
-        info!("Scheduling stove id {stove_id} data update every {status_interval}");
-        let status_interval = status_interval.to_std().expect("A valid std::Duration");
+        let repeat_policy =
+            FixedInterval::between(self.config.stove_status_repeat_interval.clone());
+        let backoff_policy = ExponentialBackoff::new(
+            Duration::from_millis(500),
+            self.config.stove_discovery_backoff_ceil,
+        );
+        info!("Scheduling stove id {stove_id} data update using policy {repeat_policy} and {backoff_policy}");
 
         for entity in RikaEntities::from(&self.last_status).list_entities() {
             self.mqtt_addr.do_send(EntityConfiguration(entity));
@@ -230,18 +250,19 @@ impl Actor for StoveActor {
 
         ctx.add_stream(stream! {
             let fetch_stove_status = || async {
-                 Ok(client.status(&stove_id).await?)
+                 client.status(&stove_id).await
             };
-            let on_error = |e, next|{
-                warn!("Will retry stove status id={stove_id} in {next:?} because it failed: {e}'");
-            };
+
+            let mut executor = RepeatableExecutor::new(fetch_stove_status)
+                .with_repeat_policy(repeat_policy)
+                .with_backoff_policy(backoff_policy);
+
             loop {
-                match retry_notify(BACKOFF_POLICY.clone(), fetch_stove_status, on_error).await {
+                match executor.next().await {
                     Ok(status) => {
                         yield status;
-                        time::sleep(status_interval).await;
                     }
-                    Err(error) => error!("Unable to fetch status for stove id={stove_id}: {error}"),
+                    Err(execution_failure) => error!("Unable to fetch status for stove id={stove_id}: {execution_failure}"),
                 }
             }
         });

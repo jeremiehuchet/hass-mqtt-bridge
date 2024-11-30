@@ -1,19 +1,25 @@
+use std::ops::RangeInclusive;
+use std::time::Duration;
+
 use actix::Actor;
 use actix_web::{middleware::Logger, App, HttpServer};
 use anyhow::Result;
 use clap::Parser;
-use log::{debug, error, info};
+use log::{debug, info};
 use misc::app_infos;
 use misc::SuffixStrip;
 use mqtt::MqttActor;
 use rika::StoveDiscoveryActor;
+use rika::StoveDiscoveryActorConfiguration;
 use rika_firenet_client::RikaFirenetClientBuilder;
 use somfy_protect::SomfyActor;
 use somfy_protect_client::client::SomfyProtectClientBuilder;
 use url::Url;
 
+mod cli;
 mod misc;
 mod mqtt;
+mod repeat;
 mod rika;
 mod somfy_protect;
 
@@ -42,6 +48,22 @@ struct Cli {
     /// Rika password
     #[clap(long, env, requires = "rika_username")]
     rika_password: Option<String>,
+
+    /// Rika stove discovery scan interval
+    #[clap(long, env, value_parser = cli::parse_time_delta_range, default_value = "6d..8d")]
+    rika_stove_discovery_repeat_interval: RangeInclusive<Duration>,
+
+    /// Rika stove discovery exponential backoff ceil
+    #[clap(long, env, value_parser = cli::parse_time_delta, default_value = "8h")]
+    rika_stove_discovery_backoff_ceil: Duration,
+
+    /// Rika stove status update interval
+    #[clap(long, env, value_parser = cli::parse_time_delta_range, default_value = "6d..8d")]
+    rika_stove_status_repeat_interval: RangeInclusive<Duration>,
+
+    /// Rika stove status update exponential backoff ceil
+    #[clap(long, env, value_parser = cli::parse_time_delta, default_value = "8h")]
+    rika_stove_status_backoff_ceil: Duration,
 
     /// Somfy Protect API base URL
     #[clap(long, env)]
@@ -92,23 +114,34 @@ struct Cli {
     somfy_password: Option<String>,
 }
 
+impl From<&Cli> for StoveDiscoveryActorConfiguration {
+    fn from(value: &Cli) -> Self {
+        Self {
+            stove_discovery_repeat_interval: value.rika_stove_discovery_repeat_interval.clone(),
+            stove_discovery_backoff_ceil: value.rika_stove_discovery_backoff_ceil,
+            stove_status_repeat_interval: value.rika_stove_status_repeat_interval.clone(),
+            stove_status_exponential_backoff_ceil: value.rika_stove_status_backoff_ceil,
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> Result<()> {
     env_logger::init();
 
     let cli: Cli = Parser::parse();
 
-    let mqtt = MqttActor::new(cli.mqtt_broker_url, cli.mqtt_username, cli.mqtt_password);
+    let mqtt = MqttActor::new(&cli.mqtt_broker_url, &cli.mqtt_username, &cli.mqtt_password);
     let mqtt_addr = mqtt.start();
 
-    match (cli.rika_username, cli.rika_password) {
+    match (&cli.rika_username, &cli.rika_password) {
         (Some(username), Some(password)) => {
             let mut client_builder =
                 RikaFirenetClientBuilder::default().credentials(username, password);
-            if let Some(base_url) = cli.rika_baseurl {
+            if let Some(base_url) = &cli.rika_baseurl {
                 client_builder = client_builder.base_url(base_url.strip_repeated_suffix("/"));
             }
-            let rika = StoveDiscoveryActor::new(mqtt_addr.clone(), client_builder.build());
+            let rika = StoveDiscoveryActor::new(&cli, mqtt_addr.clone(), client_builder.build());
             rika.start();
         }
         (_, _) => debug!("No configuration for Rika Firenet"),

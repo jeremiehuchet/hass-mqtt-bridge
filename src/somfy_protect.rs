@@ -4,7 +4,7 @@ use crate::{
 };
 use actix::prelude::*;
 use async_stream::stream;
-use chrono::Duration as ChronoDuration;
+use chrono::TimeDelta;
 use ha_mqtt_discovery::{
     mqtt::{
         binary_sensor::BinarySensor,
@@ -31,9 +31,9 @@ const MANUFACTURER: &str = "Somfy";
 const ALT_MANUFACTURER: &str = "Myfox";
 const VALID_MANUFACTURERS: [&str; 2] = [MANUFACTURER, ALT_MANUFACTURER];
 lazy_static! {
-    static ref SITES_SCRAPE_INTERVAL: ChronoDuration = ChronoDuration::minutes(5);
-    static ref DEVICES_SCRAPE_INTERVAL: ChronoDuration = ChronoDuration::minutes(1);
-    static ref SENSORS_EXPIRATION_TIME: ChronoDuration = ChronoDuration::minutes(1);
+    static ref SITES_SCRAPE_INTERVAL: TimeDelta = TimeDelta::minutes(5);
+    static ref DEVICES_SCRAPE_INTERVAL: TimeDelta = TimeDelta::minutes(1);
+    static ref SENSORS_EXPIRATION_TIME: TimeDelta = TimeDelta::minutes(1);
 }
 
 pub struct SomfyActor {

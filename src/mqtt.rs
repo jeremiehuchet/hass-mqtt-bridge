@@ -1,25 +1,21 @@
-use std::{
-    collections::{HashMap, HashSet},
-    iter::Map,
-};
-
 use actix::prelude::*;
-use anyhow::{anyhow, Error};
+use actix_web::rt::time;
 use async_stream::stream;
 use ha_mqtt_discovery::v5::{
     mqttbytes::{
         v5::{ConnAck, Packet, Publish},
         QoS,
     },
-    AsyncClient, ClientError, ConnectionError, Event, MqttOptions,
+    AsyncClient, ClientError, Event, MqttOptions,
 };
 use ha_mqtt_discovery::{Entity, HomeAssistantMqtt};
-use log::{debug, error, info, trace};
+use log::{error, info, trace};
 use serde::Serialize;
 use serde_json::Value;
+use std::{collections::HashSet, time::Duration};
 use url::Url;
 
-use crate::misc::{app_infos, hostname};
+use crate::misc::{app_infos, hostname, HumanReadable};
 
 const BIRTH_LAST_WILL_TOPIC: &str = "homeassistant/status";
 const BIRTH_PAYLOAD: &str = "online";
@@ -33,7 +29,7 @@ pub struct MqttActor {
 }
 
 impl MqttActor {
-    pub fn new(broker_url: Url, username: String, password: String) -> Self {
+    pub fn new(broker_url: &Url, username: &String, password: &String) -> Self {
         let mqtt_options = MqttOptions::new(
             format!("{}@{}", app_infos::name(), hostname()),
             broker_url
@@ -64,10 +60,6 @@ impl MqttActor {
         }
     }
 
-    fn handle_error(&self, error: ConnectionError) {
-        error!("error response from server: {error} (hint: see server logs)");
-    }
-
     fn handle_event(&self, event: Event) {
         trace!("event from server: {event:?}");
         match event {
@@ -89,22 +81,34 @@ impl Actor for MqttActor {
         let (async_client, mut event_loop) = AsyncClient::new(self.mqtt_options.clone(), 10);
         self.mqtt_client = Some(async_client.clone());
         self.ha_mqtt = Some(HomeAssistantMqtt::new(async_client, "homeassistant/"));
+
         ctx.add_stream(stream! {
+            let backoff = exponential_backoff::Backoff::new(u32::MAX, Duration::from_millis(50), Duration::from_secs(300));
+            let mut backoff_session = backoff.iter();
             loop {
-                yield event_loop.poll().await;
+                match event_loop.poll().await {
+                    Ok(event) => yield event,
+                    Err(connection_error) => {
+                        let delay = match   backoff_session.next() {
+                            Some(Some(delay)) => delay,
+                            _ => Duration::from_secs(300),
+                        };
+                        error!("Backing off for {}: {connection_error} (see also MQTT server logs)", delay.prettify());
+                        time::sleep(delay).await;
+                    }
+                }
             }
         });
     }
 }
 
-impl StreamHandler<Result<Event, ConnectionError>> for MqttActor {
-    fn handle(&mut self, msg: Result<Event, ConnectionError>, ctx: &mut Self::Context) {
+impl StreamHandler<Event> for MqttActor {
+    fn handle(&mut self, msg: Event, ctx: &mut Self::Context) {
         match msg {
-            Ok(Event::Incoming(Packet::ConnAck(ack))) => {
+            Event::Incoming(Packet::ConnAck(ack)) => {
                 self.subscribe_ha_events(ctx, ack);
             }
-            Ok(event) => self.handle_event(event),
-            Err(error) => self.handle_error(error),
+            event => self.handle_event(event),
         }
     }
 
