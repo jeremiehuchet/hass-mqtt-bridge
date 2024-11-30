@@ -1,3 +1,9 @@
+use std::{
+    fmt::{Debug, Display},
+    time::Duration,
+};
+
+use chrono::TimeDelta;
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
 use url::Url;
@@ -76,9 +82,50 @@ impl SuffixStrip for Url {
     }
 }
 
+pub trait HumanReadable: Debug {
+    fn prettify(&self) -> String;
+}
+
+impl HumanReadable for Duration {
+    fn prettify(&self) -> String {
+        if self < &Duration::from_secs(60) {
+            format!("{self:?}")
+        } else {
+            TimeDelta::from_std(self.clone()).unwrap().prettify()
+        }
+    }
+}
+
+impl HumanReadable for TimeDelta {
+    fn prettify(&self) -> String {
+        let seconds = self.num_seconds() % 60;
+        let minutes = self.num_minutes() % 60;
+        let hours = self.num_hours() % 24;
+        let days = self.num_days() % 7;
+        let weeks = self.num_weeks();
+
+        if self.num_seconds() < 60 {
+            self.to_std()
+                .map(|duration| format!("{duration:?}"))
+                .unwrap_or(self.to_string())
+        } else {
+            format!(" {weeks}w {days}d {hours}h {minutes}m {seconds}s")
+                .replace(" 0w", "")
+                .replace(" 0d", "")
+                .replace(" 0h", "")
+                .replace(" 0m", "")
+                .replace(" 0s", "")
+                .trim()
+                .to_string()
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::misc::{Sluggable, SuffixStrip};
+    use chrono::TimeDelta;
+
+    use crate::misc::{HumanReadable, Sluggable, SuffixStrip};
 
     #[test]
     fn can_generate_a_slug() {
@@ -101,6 +148,35 @@ mod tests {
         assert_eq!(
             "Hello world!!!!!!!!!".strip_repeated_suffix("!"),
             "Hello world"
+        );
+    }
+
+    #[test]
+    fn can_pretty_format_durations() {
+        assert_eq!(
+            TimeDelta::milliseconds(943).prettify(),
+            "943ms",
+            "should displat ms only"
+        );
+        assert_eq!(
+            TimeDelta::seconds(32).prettify(),
+            "32s",
+            "should display seconds only"
+        );
+        assert_eq!(
+            TimeDelta::seconds(100000).prettify(),
+            "1d 3h 46m 40s",
+            "should displat d h m s"
+        );
+        assert_eq!(
+            TimeDelta::seconds(89160).prettify(),
+            "1d 46m",
+            "should hide empty units"
+        );
+        assert_eq!(
+            TimeDelta::milliseconds(6141600030).prettify(),
+            "10w 1d 2h",
+            "ms are ignored"
         );
     }
 }
