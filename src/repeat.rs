@@ -180,6 +180,7 @@ mod tests {
     };
 
     use anyhow::anyhow;
+    use tokio::time;
 
     use crate::repeat::{ExecutionFailure, StubSleeper};
 
@@ -329,7 +330,7 @@ mod tests {
 
 pub mod policy {
     use core::ops::RangeInclusive;
-    use log::{error, warn};
+    use log::warn;
     use rand::Rng;
     use std::{cmp, fmt::Display, time::Duration, u32};
 
@@ -405,7 +406,6 @@ pub mod policy {
             }
             let max_delay = cmp::max(initial_delay, max_delay);
             let backoff = exponential_backoff::Backoff::new(u32::MAX, initial_delay, max_delay);
-            error!("{backoff:?}");
             ExponentialBackoff {
                 initial_delay,
                 max_delay,
