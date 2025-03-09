@@ -14,6 +14,6 @@
   "devDependencies": {
     "@playwright/test": "1.49.0",
     "@types/node": "22.10.1",
-    "testcontainers": "10.15.0"
+    "testcontainers": "10.18.0"
   }
 }
