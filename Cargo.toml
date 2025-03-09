@@ -21,7 +21,7 @@ lazy_static = "1.0"
 log = "0.4"
 package_info = "0.1"
 package_info_derive = "0.1"
-rand = "0.8"
+rand = "0.9"
 regex = "1.0"
 rika-firenet-client = { git = "https://github.com/jeremiehuchet/rika-firenet-api-rs.git" }
 rumqttc = "0.24"
