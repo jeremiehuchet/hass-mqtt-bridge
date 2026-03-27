@@ -34,4 +34,4 @@ unicode-normalization = "0.1"
 url = "2.5"
 
 [dev-dependencies]
-tokio = "1.41"
+tokio = "=1.41.1"
