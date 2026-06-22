@@ -8,7 +8,7 @@ services:
       - 8123:8123
 
   mosquitto:
-    image: eclipse-mosquitto:2.0@sha256:8b396cec28cd5e8e1a3aba1d9abdbddd42c454c80f703e77c1bec56e152fa54e
+    image: eclipse-mosquitto:2.0@sha256:212f89e1eaeb2c322d6441b64396e3346026674db8fa9c27beac293405c32b3c
     volumes:
       - "./docker-compose/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"
       - "./docker-compose/mosquitto/acl.conf:/mosquitto/config/acl.conf:ro"
@@ -17,7 +17,7 @@ services:
       - 1883
 
   mosquitto-debug:
-    image: eclipse-mosquitto:2.0@sha256:8b396cec28cd5e8e1a3aba1d9abdbddd42c454c80f703e77c1bec56e152fa54e
+    image: eclipse-mosquitto:2.0@sha256:212f89e1eaeb2c322d6441b64396e3346026674db8fa9c27beac293405c32b3c
     entrypoint: mosquitto_sub
     command:
       - --id
