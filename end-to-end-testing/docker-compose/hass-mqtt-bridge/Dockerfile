@@ -1,4 +1,4 @@
-FROM rust:slim@sha256:1111c28d995d06a7863ba6cea3b3dcb87bebe65af8ec5517caaf2c8c26f38010 AS base
+FROM rust:slim@sha256:7eab7ce19273ce785e0ca7578bdf7bc1fcbae621775a8197379a04c9f6e03cd5 AS base
 RUN apt update && apt install -y libssl-dev pkg-config
 
 FROM base AS intermediate-builder
