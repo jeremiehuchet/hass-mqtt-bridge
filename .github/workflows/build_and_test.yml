@@ -66,7 +66,7 @@ jobs:
           retention-days: 30
 
       - name: Publish Test Results
-        uses: mikepenz/action-junit-report@992d97d6eb2e5f3de985fbf9df6a04386874114d # v5
+        uses: mikepenz/action-junit-report@a16be3a69023e9bd7e748ede768b3282ea7b30ce # v6
         if: ${{ !cancelled() }}
         with:
           report_paths: end-to-end-testing/playwright-report/results.xml
